@@ -4,3 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+image = "0.25.9"
+nalgebra = "0.34.1"
+num-traits = "0.2.19"
