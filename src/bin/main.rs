@@ -1,7 +1,6 @@
 use image::{DynamicImage, ImageReader, Rgb};
 use nalgebra::geometry::Point3;
-use nalgebra::{Matrix3x1, Matrix3x6, Vector2, Vector3, Vector6};
-use spectra6_dither::barycentric::line::LineProjector;
+use nalgebra::{Matrix3x1, Matrix3x6, Vector3, Vector6};
 use spectra6_dither::barycentric::triangle::ClippingTriangleProjector;
 
 #[allow(dead_code)]
@@ -102,7 +101,7 @@ fn main() {
         let value: Rgb<f32> = *pixel;
 
         let value = color_to_point(value);
-        let (barycentric, _, _): (Vector3<f32>, bool, Option<f32>) = projector.project_clipped(&value);
+        let (barycentric, _, _): (Vector3<f32>, bool, Option<f32>) = projector.clipping_project(&value);
         let barycentric: Vector6<f32> =
             Vector6::new(barycentric[0], barycentric[1], 0.0, barycentric[2], 0.0, 0.0);
         let value: Vector3<f32> = matrix * barycentric;

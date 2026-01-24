@@ -102,7 +102,7 @@ impl<
     }
 
     // Returns barycentric coordinates, if it was clipped, and (if already calculated) distance^2
-    pub fn project_clipped(&self, pt: &Point3<T>) -> (Vector3<T>, bool, Option<T::RealField>) {
+    pub fn clipping_project(&self, pt: &Point3<T>) -> (Vector3<T>, bool, Option<T::RealField>) {
         let barycentric: Vector3<T> = self.project(pt);
         if barycentric.min() >= zero() {
             // Inside the triangle, no need to clip, hurrah!
@@ -120,7 +120,7 @@ impl<
                 // If the barycentric coordinate for a point is negative,
                 // this means the point is behind the opposing line
                 // Find the closest point on that line.
-                let (line_barycentric, line_clipped) = self.lines[index].project_clipped(pt);
+                let (line_barycentric, line_clipped) = self.lines[index].clipping_project(pt);
                 let mut candidate_barycentric : Vector3<T> = zero();
                 candidate_barycentric[(index + 1) % 3] = line_barycentric[0].clone();
                 candidate_barycentric[(index + 2) % 3] = line_barycentric[1].clone();

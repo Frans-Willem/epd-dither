@@ -60,7 +60,7 @@ impl<
     // Second retval is None is the projection was on the line,
     // or Some(distance_squared) if it was clipped to the endpoints.
     // distance_squared is the squared euclidian distance from pt to the clipped point
-    pub fn project_clipped(&self, pt: &Point3<T>) -> (Vector2<T>, bool) {
+    pub fn clipping_project(&self, pt: &Point3<T>) -> (Vector2<T>, bool) {
         let ret = self.project(pt);
         if ret[0] < zero() {
             (Vector2::new(zero(), one()), true)
