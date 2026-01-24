@@ -1,6 +1,6 @@
-use nalgebra::base::{Scalar, Vector3};
+use nalgebra::base::{Scalar, Vector2, Vector3};
 use nalgebra::geometry::Point3;
-use nalgebra::{ClosedAddAssign, ClosedDivAssign, ClosedMulAssign, ClosedSubAssign};
+use nalgebra::{ClosedAddAssign, ClosedDivAssign, ClosedMulAssign, ClosedSubAssign, ComplexField};
 use num_traits::identities::{One, Zero};
 use num_traits::{one, zero};
 
@@ -16,6 +16,7 @@ impl<
         + ClosedMulAssign
         + ClosedAddAssign
         + ClosedDivAssign
+        + ComplexField
         + Zero
         + One
         + PartialOrd,
@@ -34,27 +35,37 @@ impl<
     }
 
     // Projects to barycentric coordinates
-    pub fn project(&self, pt: Point3<T>) -> [T; 2] {
+    pub fn project(&self, pt: &Point3<T>) -> Vector2<T> {
         if self.norm_squared.is_zero() {
             // length of direction is zero, so line is a point
-            return [one(), zero()];
+            return Vector2::new(one(), zero());
         }
         let origin_to_pt: Vector3<T> = pt - &self.origin;
         let origin_to_pt_dist_sq: T = origin_to_pt.dot(&origin_to_pt);
         if origin_to_pt_dist_sq.is_zero() {
             // A and P are the same, just return [1,0]
-            return [one(), zero()];
+            return Vector2::new(one(), zero());
         }
         let t = origin_to_pt.dot(&self.direction) / self.norm_squared.clone();
-        return [T::one() - t.clone(), t];
+        return Vector2::new(T::one() - t.clone(), t);
     }
 
-    pub fn project_clipped(&self, pt: Point3<T>) -> ([T; 2], bool) {
+    pub fn bary_to_point(&self, barycentric_coords: Vector2<T>) -> Point3<T> {
+        &self.origin + (&self.direction * barycentric_coords[1].clone())
+    }
+
+    // Returns closest barycentric coordinate on line (first retval)
+    // If it was clipped (e.g. fell outside the two vertices) (second retval)
+    // And optionally, if it has already been calculated
+    // Second retval is None is the projection was on the line,
+    // or Some(distance_squared) if it was clipped to the endpoints.
+    // distance_squared is the squared euclidian distance from pt to the clipped point
+    pub fn project_clipped(&self, pt: &Point3<T>) -> (Vector2<T>, bool) {
         let ret = self.project(pt);
         if ret[0] < zero() {
-            ([zero(), one()], true)
+            (Vector2::new(zero(), one()), true)
         } else if ret[1] < zero() {
-            ([one(), zero()], true)
+            (Vector2::new(one(), zero()), true)
         } else {
             (ret, false)
         }

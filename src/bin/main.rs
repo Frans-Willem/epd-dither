@@ -1,7 +1,8 @@
-use image::{ImageReader, Rgb, DynamicImage};
-use nalgebra::geometry::{Point3};
-use nalgebra::{Matrix3x6, Matrix3x1,Vector6,Vector3};
+use image::{DynamicImage, ImageReader, Rgb};
+use nalgebra::geometry::Point3;
+use nalgebra::{Matrix3x1, Matrix3x6, Vector2, Vector3, Vector6};
 use spectra6_dither::barycentric::line::LineProjector;
+use spectra6_dither::barycentric::triangle::ClippingTriangleProjector;
 
 #[allow(dead_code)]
 const PALETTE: [Rgb<f32>; 6] = [
@@ -33,8 +34,8 @@ enum SpectraColors {
 
 #[allow(dead_code)]
 fn color_to_point(color: Rgb<f32>) -> Point3<f32> {
-    let [r,g,b] = color.0;
-    Point3::new(r,g,b)
+    let [r, g, b] = color.0;
+    Point3::new(r, g, b)
 }
 
 fn point_to_color(pt: Point3<f32>) -> Rgb<f32> {
@@ -42,7 +43,8 @@ fn point_to_color(pt: Point3<f32>) -> Rgb<f32> {
 }
 
 fn palette_to_matrix(palette: &[Rgb<f32>; 6]) -> Matrix3x6<f32> {
-    let palette_as_colors : [Matrix3x1<f32>; 6] = palette.each_ref().map(|x| color_to_point(x.clone()).coords);
+    let palette_as_colors: [Matrix3x1<f32>; 6] =
+        palette.each_ref().map(|x| color_to_point(x.clone()).coords);
     let matrix = Matrix3x6::from_columns(&palette_as_colors);
     matrix
 }
@@ -56,29 +58,61 @@ fn main() {
         .into_rgb32f();
     println!("Opened image");
 
+    let projector = ClippingTriangleProjector::new([
+        color_to_point(PALETTE[SpectraColors::Black as usize].clone()),
+        color_to_point(PALETTE[SpectraColors::White as usize].clone()),
+        color_to_point(PALETTE[SpectraColors::Green as usize].clone()),
+    ]);
+
+    println!(
+        "Black: {:?}",
+        projector.project(&color_to_point(
+            PALETTE[SpectraColors::Black as usize].clone()
+        ))
+    );
+    println!(
+        "White: {:?}",
+        projector.project(&color_to_point(
+            PALETTE[SpectraColors::White as usize].clone()
+        ))
+    );
+    println!(
+        "Green: {:?}",
+        projector.project(&color_to_point(
+            PALETTE[SpectraColors::Green as usize].clone()
+        ))
+    );
+    println!(
+        "Red: {:?}",
+        projector.project(&color_to_point(PALETTE[SpectraColors::Red as usize].clone()))
+    );
+
+    /*
     let projector = LineProjector::new([
         color_to_point(PALETTE[SpectraColors::Black as usize].clone()),
         color_to_point(PALETTE[SpectraColors::White as usize].clone()),
     ]);
+    */
 
     let matrix = palette_to_matrix(&PALETTE);
 
     let mut input = input;
     println!("Iterating over pixels");
     for pixel in input.pixels_mut() {
-        let value : Rgb<f32> = *pixel;
+        let value: Rgb<f32> = *pixel;
 
         let value = color_to_point(value);
-        let (barycentric, _) : ([f32; 2], bool) = projector.project_clipped(value);
-        let barycentric : Vector6<f32> = Vector6::new(barycentric[0], barycentric[1], 0.0, 0.0, 0.0, 0.0);
-        let value : Vector3<f32> = matrix * barycentric;
-        let value : Point3<f32> = Point3::from(value);
-        let value : Rgb<f32> = point_to_color(value);
+        let (barycentric, _, _): (Vector3<f32>, bool, Option<f32>) = projector.project_clipped(&value);
+        let barycentric: Vector6<f32> =
+            Vector6::new(barycentric[0], barycentric[1], 0.0, barycentric[2], 0.0, 0.0);
+        let value: Vector3<f32> = matrix * barycentric;
+        let value: Point3<f32> = Point3::from(value);
+        let value: Rgb<f32> = point_to_color(value);
 
         *pixel = value;
     }
     println!("Converting back to U8");
-    let input : DynamicImage = input.into();
+    let input: DynamicImage = input.into();
     let input = input.into_rgb8();
     input.save("changed.png").unwrap();
     print!("Done");
