@@ -1,14 +1,14 @@
 use image::{DynamicImage, ImageReader, Rgb};
 use nalgebra::geometry::Point3;
 use nalgebra::{Matrix3x1, Matrix3x6, Vector3, Vector6};
-use spectra6_dither::barycentric::triangle::ClippingTriangleProjector;
 use spectra6_dither::barycentric::octahedron::OctahedronProjector;
+use spectra6_dither::barycentric::triangle::ClippingTriangleProjector;
 
 #[allow(dead_code)]
 const PALETTE: [Rgb<f32>; 6] = [
     Rgb([
         0.22676264646610847,
-        0.0,//-0.0055970314385675474,
+        0.0, //-0.0055970314385675474,
         0.2597094644681131,
     ]),
     Rgb([0.7000095212021477, 0.8161663966432444, 0.7861384978213591]),
@@ -18,7 +18,7 @@ const PALETTE: [Rgb<f32>; 6] = [
     Rgb([
         0.8417257856614314,
         0.9126861145185275,
-        0.0,//-0.053016650312371474,
+        0.0, //-0.053016650312371474,
     ]),
 ];
 
@@ -70,8 +70,10 @@ fn main() {
     // to south pole, and maybe we can just ignore that one. Would that even affect both
     // pole-barycentric-coordinates being <0
     // TODO: Check why there are faces towards white being checked, that shouldn't happen at all :/
-    println!("Full black: {:?}", projector.project(&Point3::<f32>::new(0.0,0.0,0.0)));
-    return;
+    println!(
+        "Full black: {:?}",
+        projector.project(&Point3::<f32>::new(0.0, 0.0, 0.0))
+    );
 
     let matrix = palette_to_matrix(&PALETTE);
 
@@ -81,8 +83,7 @@ fn main() {
         let value: Rgb<f32> = *pixel;
 
         let value = color_to_point(value);
-        let barycentric: Vector6<f32> =
-            projector.project(&value);
+        let barycentric: Vector6<f32> = projector.project(&value);
         let barycentric: Vector6<f32> = Vector6::new(
             barycentric[0],
             barycentric[1],

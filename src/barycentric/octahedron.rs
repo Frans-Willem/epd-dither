@@ -5,7 +5,7 @@ use nalgebra::base::{Scalar, Vector2, Vector3, Vector4, Vector6};
 use nalgebra::geometry::Point3;
 use nalgebra::{ClosedAddAssign, ClosedDivAssign, ClosedMulAssign, ClosedSubAssign, ComplexField};
 use num_traits::identities::{One, Zero};
-use num_traits::{zero, one};
+use num_traits::{zero};
 
 pub struct OctahedronProjector<T: Scalar> {
     /*
@@ -66,7 +66,10 @@ impl<
             let pole_index = i / 4;
             let equator_index = i % 4;
             if pole_index < 2 {
-                LineProjector::new([vertices[pole_index].clone(), vertices[2 + equator_index].clone()])
+                LineProjector::new([
+                    vertices[pole_index].clone(),
+                    vertices[2 + equator_index].clone(),
+                ])
             } else {
                 LineProjector::new([
                     vertices[2 + (equator_index % 4)].clone(),
@@ -106,8 +109,8 @@ impl<
     fn edge_barycentric_local_to_global(index: usize, local: Vector2<T>) -> Vector6<T> {
         //Black, White, Blue, Green, Yellow, Red (last 2 swapped)
         //
-        let [a,b] = local.into();
-        let mut ret : Vector6<T> = zero();
+        let [a, b] = local.into();
+        let mut ret: Vector6<T> = zero();
         let pole_index = index / 4;
         let equator_index = index % 4;
         if pole_index < 2 {
@@ -116,14 +119,14 @@ impl<
             ret[2 + equator_index] = b;
         } else {
             ret[2 + equator_index] = a;
-            ret[2 + ((equator_index+1) % 4)] = b;
+            ret[2 + ((equator_index + 1) % 4)] = b;
         }
         ret
     }
 
     pub fn project(&self, pt: &Point3<T>) -> Vector6<T> {
-        let mut faces_to_check: [bool; 8] = [false; 8];
-        let mut best : Option<(Vector6<T>, T)> = None;
+        let mut edges_to_check: [bool; 12] = [false; 12];
+        let mut best: Option<(Vector6<T>, T)> = None;
         for (wedge_index, wedge) in self.wedges.iter().enumerate() {
             // Wedge from north (0), south (1), a (2 + wedge_index), b (2 + ((wedge_index+1)%4)
             let barycentric_local: Vector4<T> = wedge.project(pt);
@@ -135,8 +138,15 @@ impl<
             }
             // In case a point lies in the rounding errors between the wedges, keep track of the one
             // with the highest minimum barycentric coordinate (e.g. the one closest to 0)
-            if best.as_ref().map(|best| best.1 < barycentric_local_min).unwrap_or(true) {
-                best = Some((Self::wedge_barycentric_local_to_global(wedge_index, barycentric_local.clone()), barycentric_local_min));
+            if best
+                .as_ref()
+                .map(|best| best.1 < barycentric_local_min)
+                .unwrap_or(true)
+            {
+                best = Some((
+                    Self::wedge_barycentric_local_to_global(wedge_index, barycentric_local.clone()),
+                    barycentric_local_min,
+                ));
             }
             // The faces north->south->a and north->south->b aren't relevant, as they meet with one
             // of the other wedges there. The faces north->a->b and south->a->b are, as these are
@@ -146,20 +156,45 @@ impl<
             for pole in 0..2 {
                 if barycentric_local[pole] <= zero() {
                     let other_pole = 1 - pole;
-                    // TODO: There's no point in doing it this way, as there's only one wedge using
-                    // that (outside) face.
-                    faces_to_check[(other_pole * 4) + wedge_index] = true;
+                    let face_index = (other_pole * 4) + wedge_index;
+                    let face = &self.faces[face_index];
+                    let barycentric_local = face.project(pt);
+                    if barycentric_local.min() >= zero() {
+                        // Point lies outside the octahedron, but projects cleanly onto this face,
+                        // meaning the point on this face is the closest to it! (as long as all faces are
+                        // convex)
+                        return Self::face_barycentric_local_to_global(
+                            face_index,
+                            barycentric_local,
+                        );
+                    }
+                    if barycentric_local[0] <= zero() {
+                        // Barycentric coordinate for pole <0 means the projected point lies on or beyond
+                        // the equatorial edge.
+                        edges_to_check[8 + (face_index % 4)] = true;
+                    }
+                    for equator_vertex_index in 0..2 {
+                        if barycentric_local[1 + equator_vertex_index] <= zero() {
+                            // Barycentric coordinate for one of the equatorial edges <0 means the projected
+                            // point lies on or beyond the opposite pole_edge.
+                            let pole_index = face_index / 4;
+                            let other_equator_vertex_index =
+                                ((face_index % 4) + (1 - equator_vertex_index)) % 4;
+                            edges_to_check[pole_index * 4 + other_equator_vertex_index] = true;
+                        }
+                    }
                 }
             }
         }
-        // At this point, neither of the wedges indicate the point is in there, and we kept a list
-        // of the faces it was marked outside of. If this list is empty, then the point probably
+        // At this point, neither of the wedges indicate the point is in there, or on any of it's
+        // outside faces, and we kept a list
+        // of the edges that should be checked. If this list is empty, then the point probably
         // lies somewhere in the rounding errors between the wedges.
-        if faces_to_check.iter().all(|to_check| *to_check == false) {
+        if edges_to_check.iter().all(|to_check| *to_check == false) {
             let (mut best, _) = best.unwrap();
             // Set all coordinates <0 to 0
             for coord in best.iter_mut() {
-                if *coord < zero() { 
+                if *coord < zero() {
                     *coord = zero()
                 }
             }
@@ -170,48 +205,12 @@ impl<
             }
             return best;
         }
-        let mut edges_to_check: [bool; 12] = [false; 12];
-        for (face_index, face) in self.faces.iter().enumerate() {
-            // Face from pole (face_index / 4), a (2 + face_index), b (2 + (face_index+1)%4)
-            if !faces_to_check[face_index] {
-                continue;
-            }
-            let barycentric_local = face.project(pt);
-            if barycentric_local.min() >= zero() {
-                // Point lies outside the octahedron, but projects cleanly onto this face,
-                // meaning the point on this face is the closest to it! (as long as all faces are
-                // convex)
-                return Self::face_barycentric_local_to_global(face_index, barycentric_local);
-            }
-            if barycentric_local[0] <= zero() {
-                // Barycentric coordinate for pole <0 means the projected point lies on or beyond
-                // the equatorial edge.
-                edges_to_check[8 + (face_index % 4)] = true;
-            }
-            for equator_vertex_index in 0..2 {
-                if barycentric_local[1 + equator_vertex_index] <= zero() {
-                    // Barycentric coordinate for one of the equatorial edges <0 means the projected
-                    // point lies on or beyond the opposite pole_edge.
-                    let pole_index = face_index / 4;
-                    let other_equator_vertex_index =
-                        ((face_index % 4) + (1 - equator_vertex_index)) % 4;
-                    edges_to_check[pole_index * 4 + other_equator_vertex_index] = true;
-                }
-            }
-        }
-        if edges_to_check.iter().all(|to_check| *to_check == false) {
-            // Apparently the point fell between all of the face projections with rounding errors,
-            // what to do?
-            // TODO: Since the above loop either returns, *or* sets one of the edges to true, this
-            // can never happen.
-            todo!()
-        }
         let mut best: Option<(Vector6<T>, T::RealField)> = None;
         for (edge_index, edge) in self.edges.iter().enumerate() {
             if edges_to_check[edge_index] == false {
                 continue;
             }
-            let (barycentric_local, was_clipped) = edge.clipping_project(pt);
+            let (barycentric_local, _) = edge.clipping_project(pt);
             // Keep track of best so far
             let distance = (edge.bary_to_point(&barycentric_local) - pt).norm_squared();
             if best.as_ref().map(|best| best.1 > distance).unwrap_or(true) {
