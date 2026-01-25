@@ -2,7 +2,6 @@ use image::{DynamicImage, ImageReader, Rgb};
 use nalgebra::geometry::Point3;
 use nalgebra::{Matrix3x1, Matrix3x6, Vector3, Vector6};
 use spectra6_dither::barycentric::octahedron::OctahedronProjector;
-use spectra6_dither::barycentric::triangle::ClippingTriangleProjector;
 
 #[allow(dead_code)]
 const PALETTE: [Rgb<f32>; 6] = [
