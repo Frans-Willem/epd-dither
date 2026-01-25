@@ -50,7 +50,7 @@ impl<
         return Vector2::new(T::one() - t.clone(), t);
     }
 
-    pub fn bary_to_point(&self, barycentric_coords: Vector2<T>) -> Point3<T> {
+    pub fn bary_to_point(&self, barycentric_coords: &Vector2<T>) -> Point3<T> {
         &self.origin + (&self.direction * barycentric_coords[1].clone())
     }
 
