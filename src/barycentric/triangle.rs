@@ -121,19 +121,20 @@ impl<
                 // this means the point is behind the opposing line
                 // Find the closest point on that line.
                 let (line_barycentric, line_clipped) = self.lines[index].clipping_project(pt);
-                let mut candidate_barycentric : Vector3<T> = zero();
+                let mut candidate_barycentric: Vector3<T> = zero();
                 candidate_barycentric[(index + 1) % 3] = line_barycentric[0].clone();
                 candidate_barycentric[(index + 2) % 3] = line_barycentric[1].clone();
                 if line_clipped == false {
                     // The point projected on the line fell cleanly between the endpoints,
                     // which indicates that this is indeed the closest point on the triangle.
                     // We can return it right away, no need to keep looking.
-                    return (candidate_barycentric, true, None)
-               } else {
+                    return (candidate_barycentric, true, None);
+                } else {
                     // The point projected on the line fell outside the line, so was clipped to one
                     // of the endpoints. This doesn't garantuee that this is the best point, so
                     // save it and keep looking
-                    let candidate_distance_sq = (self.bary_to_point(&candidate_barycentric) - pt).norm_squared();
+                    let candidate_distance_sq =
+                        (self.bary_to_point(&candidate_barycentric) - pt).norm_squared();
                     if candidate_distance_sq < best_distance_sq {
                         best_distance_sq = candidate_distance_sq;
                         best_barycentric = candidate_barycentric;

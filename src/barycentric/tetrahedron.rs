@@ -1,25 +1,15 @@
 use nalgebra::base::{Matrix4, Scalar, Vector4};
 use nalgebra::geometry::Point3;
-use nalgebra::{ClosedAddAssign, ClosedDivAssign, ClosedMulAssign, ClosedSubAssign, ComplexField};
+use nalgebra::{ClosedAddAssign, ClosedDivAssign, ClosedMulAssign, ComplexField};
 use num_traits::identities::{One, Zero};
-use num_traits::{one, zero};
 
 pub struct TetrahedronProjector<T: Scalar> {
     to_barycentric: Matrix4<T>,
     from_barycentric: Matrix4<T>,
 }
 
-impl<
-    T: Scalar
-        + ComplexField
-        + ClosedSubAssign
-        + ClosedMulAssign
-        + ClosedAddAssign
-        + ClosedDivAssign
-        + Zero
-        + One
-        + PartialOrd,
-> TetrahedronProjector<T>
+impl<T: Scalar + ComplexField + ClosedMulAssign + ClosedAddAssign + ClosedDivAssign + Zero + One>
+    TetrahedronProjector<T>
 {
     pub fn new(vertices: [Point3<T>; 4]) -> Self {
         // Method used:
@@ -29,8 +19,9 @@ impl<
         // [ y1 y2 y3 y4 ]
         // [ z1 z2 z3 z4 ]
         // [ 1  1  1  1  ]
-        let from_barycentric : Matrix4<T> = Matrix4::from_columns(&vertices.map(|x| x.to_homogeneous()));
-        let to_barycentric : Matrix4<T> = from_barycentric.clone().try_inverse().unwrap();
+        let from_barycentric: Matrix4<T> =
+            Matrix4::from_columns(&vertices.map(|x| x.to_homogeneous()));
+        let to_barycentric: Matrix4<T> = from_barycentric.clone().try_inverse().unwrap();
         TetrahedronProjector {
             to_barycentric,
             from_barycentric,

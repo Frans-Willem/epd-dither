@@ -1,3 +1,4 @@
 pub mod line;
-pub mod triangle;
+pub mod octahedron;
 pub mod tetrahedron;
+pub mod triangle;
