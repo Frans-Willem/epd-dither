@@ -190,7 +190,7 @@ impl<
         // outside faces, and we kept a list
         // of the edges that should be checked. If this list is empty, then the point probably
         // lies somewhere in the rounding errors between the wedges.
-        if edges_to_check.iter().all(|to_check| *to_check == false) {
+        if edges_to_check.iter().all(|to_check| !*to_check) {
             let (mut best, _) = best.unwrap();
             // Set all coordinates <0 to 0
             for coord in best.iter_mut() {
@@ -207,7 +207,7 @@ impl<
         }
         let mut best: Option<(Vector6<T>, T::RealField)> = None;
         for (edge_index, edge) in self.edges.iter().enumerate() {
-            if edges_to_check[edge_index] == false {
+            if !edges_to_check[edge_index] {
                 continue;
             }
             let (barycentric_local, _) = edge.clipping_project(pt);

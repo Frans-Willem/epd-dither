@@ -59,7 +59,7 @@ impl<
         let w: T = one::<T>() - u.clone() - v.clone();
         // Triangle plane defined as
         // P = w*v1 + u*v2 + v * v3
-        return Vector3::new(w, u, v);
+        Vector3::new(w, u, v)
     }
 }
 
@@ -124,7 +124,7 @@ impl<
                 let mut candidate_barycentric: Vector3<T> = zero();
                 candidate_barycentric[(index + 1) % 3] = line_barycentric[0].clone();
                 candidate_barycentric[(index + 2) % 3] = line_barycentric[1].clone();
-                if line_clipped == false {
+                if !line_clipped {
                     // The point projected on the line fell cleanly between the endpoints,
                     // which indicates that this is indeed the closest point on the triangle.
                     // We can return it right away, no need to keep looking.

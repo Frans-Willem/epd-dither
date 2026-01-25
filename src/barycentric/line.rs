@@ -47,7 +47,7 @@ impl<
             return Vector2::new(one(), zero());
         }
         let t = origin_to_pt.dot(&self.direction) / self.norm_squared.clone();
-        return Vector2::new(T::one() - t.clone(), t);
+        Vector2::new(T::one() - t.clone(), t)
     }
 
     pub fn bary_to_point(&self, barycentric_coords: &Vector2<T>) -> Point3<T> {

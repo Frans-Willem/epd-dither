@@ -57,12 +57,12 @@ fn main() {
         .into_rgb32f();
     println!("Opened image");
     let projector = OctahedronProjector::new([
-        color_to_point(PALETTE[SpectraColors::Black as usize].clone()),
-        color_to_point(PALETTE[SpectraColors::White as usize].clone()),
-        color_to_point(PALETTE[SpectraColors::Blue as usize].clone()),
-        color_to_point(PALETTE[SpectraColors::Green as usize].clone()),
-        color_to_point(PALETTE[SpectraColors::Yellow as usize].clone()),
-        color_to_point(PALETTE[SpectraColors::Red as usize].clone()),
+        color_to_point(PALETTE[SpectraColors::Black as usize]),
+        color_to_point(PALETTE[SpectraColors::White as usize]),
+        color_to_point(PALETTE[SpectraColors::Blue as usize]),
+        color_to_point(PALETTE[SpectraColors::Green as usize]),
+        color_to_point(PALETTE[SpectraColors::Yellow as usize]),
+        color_to_point(PALETTE[SpectraColors::Red as usize]),
     ]);
 
     // NOTE: Maybe the octahedron isn't convex at all, maybe blue-green crosses "behind" the north
