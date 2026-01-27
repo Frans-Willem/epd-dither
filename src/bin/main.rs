@@ -43,9 +43,26 @@ fn point_to_color(pt: Point3<f32>) -> Rgb<f32> {
 
 fn palette_to_matrix(palette: &[Rgb<f32>; 6]) -> Matrix3x6<f32> {
     let palette_as_colors: [Matrix3x1<f32>; 6] =
-        palette.each_ref().map(|x| color_to_point(x.clone()).coords);
-    let matrix = Matrix3x6::from_columns(&palette_as_colors);
-    matrix
+        palette.each_ref().map(|x| color_to_point(*x).coords);
+    
+    Matrix3x6::from_columns(&palette_as_colors)
+}
+
+fn pick_from_barycentric_weights(weights: Vector6<f32>, offset: f32) -> usize {
+    let mut index = 0;
+    let mut offset = offset;
+    while index + 1 < 6 && weights[index] < offset {
+        offset -= weights[index];
+        index += 1;
+    }
+    index
+}
+
+fn interleaved_gradient_noise(x: u32, y: u32) -> f32 {
+    // InterleavedGradientNoise[x_, y_] := FractionalPart[52.9829189*FractionalPart[0.06711056*x + 0.00583715*y]]
+    let inner1 : f32 = (0.06711056 * (x as f32)) + (0.00583715 * (y as f32));
+    let inner2 : f32 = 52.9839189 * inner1.fract();
+    return inner2.fract();
 }
 
 fn main() {
@@ -78,7 +95,7 @@ fn main() {
 
     let mut input = input;
     println!("Iterating over pixels");
-    for pixel in input.pixels_mut() {
+    for (x,y,pixel) in input.enumerate_pixels_mut() {
         let value: Rgb<f32> = *pixel;
 
         let value = color_to_point(value);
@@ -91,9 +108,14 @@ fn main() {
             barycentric[5],
             barycentric[4],
         );
+        let noise = interleaved_gradient_noise(x,y);
+        let index = pick_from_barycentric_weights(barycentric, noise);
+        let value = PALETTE[index].clone();
+        /*
         let value: Vector3<f32> = matrix * barycentric;
         let value: Point3<f32> = Point3::from(value);
         let value: Rgb<f32> = point_to_color(value);
+        */
 
         *pixel = value;
     }
