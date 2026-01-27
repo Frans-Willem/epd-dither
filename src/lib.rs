@@ -1,3 +1,4 @@
+#![cfg_attr(not(feature = "std"), no_std)]
 pub mod barycentric;
 
 pub fn add(left: u64, right: u64) -> u64 {
