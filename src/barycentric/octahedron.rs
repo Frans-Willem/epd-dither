@@ -1,11 +1,11 @@
 use crate::barycentric::line::LineProjector;
 use crate::barycentric::tetrahedron::TetrahedronProjector;
 use crate::barycentric::triangle::TriangleProjector;
-use nalgebra::base::{Scalar, Vector2, Vector3, Vector4, Vector6};
+use nalgebra::base::{Matrix3, Scalar, Vector2, Vector3, Vector4, Vector6};
 use nalgebra::geometry::Point3;
 use nalgebra::{ClosedAddAssign, ClosedDivAssign, ClosedMulAssign, ClosedSubAssign, ComplexField};
 use num_traits::identities::{One, Zero};
-use num_traits::zero;
+use num_traits::{one, zero};
 
 pub struct OctahedronProjector<T: Scalar> {
     /*
@@ -222,5 +222,63 @@ impl<
         }
         // Point feel between all of the line projections with rounding errors, what to do?!
         best.unwrap().0
+    }
+
+    pub fn are_valid_poles(poles: [Point3<T>; 2], points: [Point3<T>; 4]) -> bool {
+        let [origin, target] = poles;
+        let neg_direction = &origin - &target;
+        let triangles = (0..4).map(|not_in_triangle| {
+            let in_triangle: [usize; 3] =
+                core::array::from_fn(|i| if i >= not_in_triangle { i + 1 } else { i });
+            in_triangle.map(|x| points[x].clone())
+        });
+        let intersections = triangles.map(|triangle| {
+            let [v1, v2, v3] = triangle;
+            // P = w*v1 + u*v2 + v*v3
+            // P = origin + t*direction
+            // Leads to:
+            // origin - v1 = -tD + u(v2 - v1) + v(v3 - v1)
+            // or:
+            // origin - v1 = [-D, v2-v1, v3-v1] * [[t],[u],[v]]
+            let mut premul: Matrix3<T> = zero();
+            premul.set_column(0, &neg_direction);
+            premul.set_column(1, &(v2 - &v1));
+            premul.set_column(2, &(v3 - &v1));
+            if let Some(inverse) = premul.try_inverse() {
+                let tuv: Vector3<T> = inverse * (&origin - &v1);
+                let [t, _, _] = tuv.into();
+                Some(t)
+            } else {
+                None
+            }
+        });
+        let min_max_intersections: Option<(T, T)> =
+            intersections.fold(None, |minmax, intersection| {
+                if let Some(intersection) = intersection {
+                    if let Some((min_intersection, max_intersection)) = minmax {
+                        Some((
+                            if intersection < min_intersection {
+                                intersection.clone()
+                            } else {
+                                min_intersection
+                            },
+                            if intersection > max_intersection {
+                                intersection.clone()
+                            } else {
+                                max_intersection
+                            },
+                        ))
+                    } else {
+                        Some((intersection.clone(), intersection.clone()))
+                    }
+                } else {
+                    minmax
+                }
+            });
+        if let Some((min_intersection, max_intersection)) = min_max_intersections {
+            min_intersection >= zero() && max_intersection <= one()
+        } else {
+            false
+        }
     }
 }

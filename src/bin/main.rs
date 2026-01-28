@@ -134,6 +134,20 @@ fn main() {
         color_to_point(PALETTE[SpectraColors::Red as usize]),
     ]);
 
+    println!("Debugging");
+    OctahedronProjector::are_valid_poles(
+        [
+            color_to_point(PALETTE[SpectraColors::Green as usize]),
+            color_to_point(PALETTE[SpectraColors::Red as usize]),
+        ],
+        [
+            color_to_point(PALETTE[SpectraColors::Black as usize]),
+            color_to_point(PALETTE[SpectraColors::White as usize]),
+            color_to_point(PALETTE[SpectraColors::Blue as usize]),
+            color_to_point(PALETTE[SpectraColors::Yellow as usize]),
+        ],
+    );
+
     // NOTE: Maybe the octahedron isn't convex at all, maybe blue-green crosses "behind" the north
     // to south pole, and maybe we can just ignore that one. Would that even affect both
     // pole-barycentric-coordinates being <0
