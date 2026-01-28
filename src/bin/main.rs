@@ -1,7 +1,75 @@
-use image::{DynamicImage, ImageReader, Rgb};
-use nalgebra::geometry::Point3;
-use nalgebra::Vector6;
 use epd_dither::barycentric::octahedron::OctahedronProjector;
+use image::{DynamicImage, ImageReader, Rgb};
+use nalgebra::Vector6;
+use nalgebra::geometry::Point3;
+
+use clap::Parser;
+use rand::distr::StandardUniform;
+use rand::prelude::*;
+
+#[derive(Clone, Debug)]
+enum NoiseSource {
+    Bayer(Option<usize>),
+    InterleavedGradient,
+    White,
+}
+
+impl NoiseSource {
+    const LONG_HELP: &'static str = concat!(
+        "Noise source to use.\n\n",
+        "Accepted values:\n",
+        " bayer:<N> Bayer matrix of size 2**N (usize)\n",
+        " bayer Infinite Bayer pattern\n",
+        " ign Interleaved Gradient Noise\n",
+        " interleaved-gradient-noise Same as `ign`\n",
+        " white White noise\n\n",
+        "Examples:\n",
+        " --noise bayer:8\n",
+        " --noise bayer\n",
+        " --noise ign\n",
+        " --noise white\n",
+    );
+}
+
+impl std::str::FromStr for NoiseSource {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "bayer" => Ok(NoiseSource::Bayer(None)),
+
+            "ign" | "interleaved-gradient-noise" => Ok(NoiseSource::InterleavedGradient),
+
+            "white" => Ok(NoiseSource::White),
+
+            _ if s.starts_with("bayer:") => {
+                let n_str = &s["bayer:".len()..];
+                let n = n_str.parse::<usize>().map_err(|_| {
+                    format!(
+                        "invalid value `{s}`: expected `bayer:<N>` where N is a positive integer"
+                    )
+                })?;
+                Ok(NoiseSource::Bayer(Some(n)))
+            }
+
+            _ => Err(format!(
+                "invalid value `{s}` for `--noise`\n\n{}",
+                NoiseSource::LONG_HELP
+            )),
+        }
+    }
+}
+
+#[derive(Parser)]
+#[command(name = "dither")]
+struct Args {
+    #[arg()]
+    input_file: String,
+    #[arg()]
+    output_file: String,
+    #[arg(long, value_name="NOISE",long_help=NoiseSource::LONG_HELP,default_value = "ign")]
+    noise: NoiseSource,
+}
 
 #[allow(dead_code)]
 const PALETTE: [Rgb<f32>; 6] = [
@@ -37,6 +105,7 @@ fn color_to_point(color: Rgb<f32>) -> Point3<f32> {
     Point3::new(r, g, b)
 }
 
+// TODO: Move to library
 fn pick_from_barycentric_weights(weights: Vector6<f32>, offset: f32) -> usize {
     let mut index = 0;
     let mut offset = offset;
@@ -47,16 +116,10 @@ fn pick_from_barycentric_weights(weights: Vector6<f32>, offset: f32) -> usize {
     index
 }
 
-fn interleaved_gradient_noise(x: u32, y: u32) -> f32 {
-    // InterleavedGradientNoise[x_, y_] := FractionalPart[52.9829189*FractionalPart[0.06711056*x + 0.00583715*y]]
-    let inner1 : f32 = (0.06711056 * (x as f32)) + (0.00583715 * (y as f32));
-    let inner2 : f32 = 52.9839189 * inner1.fract();
-    return inner2.fract();
-}
-
 fn main() {
+    let args = Args::parse();
     println!("Opening image");
-    let input = ImageReader::open("test.png")
+    let input = ImageReader::open(args.input_file)
         .unwrap()
         .decode()
         .unwrap()
@@ -75,14 +138,10 @@ fn main() {
     // to south pole, and maybe we can just ignore that one. Would that even affect both
     // pole-barycentric-coordinates being <0
     // TODO: Check why there are faces towards white being checked, that shouldn't happen at all :/
-    println!(
-        "Full black: {:?}",
-        projector.project(&Point3::<f32>::new(0.0, 0.0, 0.0))
-    );
 
     let mut input = input;
     println!("Iterating over pixels");
-    for (x,y,pixel) in input.enumerate_pixels_mut() {
+    for (x, y, pixel) in input.enumerate_pixels_mut() {
         let value: Rgb<f32> = *pixel;
 
         let value = color_to_point(value);
@@ -95,20 +154,23 @@ fn main() {
             barycentric[5],
             barycentric[4],
         );
-        let noise = interleaved_gradient_noise(x,y);
+        let noise = match args.noise {
+            NoiseSource::Bayer(Some(max_depth)) => {
+                epd_dither::noise::bayer(x as usize, y as usize, max_depth)
+            }
+            NoiseSource::Bayer(None) => epd_dither::noise::bayer_inf(x as usize, y as usize),
+            NoiseSource::InterleavedGradient => {
+                epd_dither::noise::interleaved_gradient_noise(x as f32, y as f32)
+            }
+            NoiseSource::White => rand::rng().sample(StandardUniform),
+        };
         let index = pick_from_barycentric_weights(barycentric, noise);
         let value = PALETTE[index].clone();
-        /*
-        let value: Vector3<f32> = matrix * barycentric;
-        let value: Point3<f32> = Point3::from(value);
-        let value: Rgb<f32> = point_to_color(value);
-        */
-
         *pixel = value;
     }
     println!("Converting back to U8");
     let input: DynamicImage = input.into();
     let input = input.into_rgb8();
-    input.save("changed.png").unwrap();
+    input.save(args.output_file).unwrap();
     print!("Done");
 }
