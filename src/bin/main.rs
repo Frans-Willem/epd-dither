@@ -1,7 +1,7 @@
 use image::{DynamicImage, ImageReader, Rgb};
 use nalgebra::geometry::Point3;
-use nalgebra::{Matrix3x1, Matrix3x6, Vector3, Vector6};
-use spectra6_dither::barycentric::octahedron::OctahedronProjector;
+use nalgebra::Vector6;
+use epd_dither::barycentric::octahedron::OctahedronProjector;
 
 #[allow(dead_code)]
 const PALETTE: [Rgb<f32>; 6] = [
@@ -35,17 +35,6 @@ enum SpectraColors {
 fn color_to_point(color: Rgb<f32>) -> Point3<f32> {
     let [r, g, b] = color.0;
     Point3::new(r, g, b)
-}
-
-fn point_to_color(pt: Point3<f32>) -> Rgb<f32> {
-    Rgb([pt[0], pt[1], pt[2]])
-}
-
-fn palette_to_matrix(palette: &[Rgb<f32>; 6]) -> Matrix3x6<f32> {
-    let palette_as_colors: [Matrix3x1<f32>; 6] =
-        palette.each_ref().map(|x| color_to_point(*x).coords);
-    
-    Matrix3x6::from_columns(&palette_as_colors)
 }
 
 fn pick_from_barycentric_weights(weights: Vector6<f32>, offset: f32) -> usize {
@@ -90,8 +79,6 @@ fn main() {
         "Full black: {:?}",
         projector.project(&Point3::<f32>::new(0.0, 0.0, 0.0))
     );
-
-    let matrix = palette_to_matrix(&PALETTE);
 
     let mut input = input;
     println!("Iterating over pixels");
