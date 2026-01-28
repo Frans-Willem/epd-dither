@@ -1,0 +1,7 @@
+- Documentation: Example to show difference between Floyd-Steinberg and our approach
+- Documentation: Explain difference between noise sources (e.g. white, blue, bayer, interleaved gradient)
+- Documentation: Explain decomposition methods
+- Documentation: Explain how most colors have at least 3 possible decompositions with 4 colors, and infinite possibilities with 4+ colors.
+- Code: Implement Bayer & Interleaved Gradient noise sources
+- Code: Automatically find opposite colors for octahedrons
+- Code: Automatically order colors cyclically around poles for octahedrons
