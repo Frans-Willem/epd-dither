@@ -206,23 +206,37 @@ impl<
             }
             return best;
         }
-        let mut best: Option<(Vector6<T>, T::RealField)> = None;
-        for (edge_index, edge) in self.edges.iter().enumerate() {
-            if !edges_to_check[edge_index] {
-                continue;
-            }
+        // Otherwise, find the closest projection to any of the edges
+        let edges_to_check =
+            edges_to_check
+                .iter()
+                .enumerate()
+                .filter_map(|(edge_index, should_check)| {
+                    if *should_check {
+                        Some(edge_index)
+                    } else {
+                        None
+                    }
+                });
+        let edges_projected = edges_to_check.map(|edge_index| {
+            let edge = &self.edges[edge_index];
             let (barycentric_local, _) = edge.clipping_project(pt);
-            // Keep track of best so far
-            let distance = (edge.bary_to_point(&barycentric_local) - pt).norm_squared();
-            if best.as_ref().map(|best| best.1 > distance).unwrap_or(true) {
-                best = Some((
-                    Self::edge_barycentric_local_to_global(edge_index, barycentric_local),
-                    distance,
-                ));
-            }
-        }
-        // Point feel between all of the line projections with rounding errors, what to do?!
-        best.unwrap().0
+            let distance_sq = (edge.bary_to_point(&barycentric_local) - pt).norm_squared();
+            (edge_index, barycentric_local, distance_sq)
+        });
+        let (closest_edge_index, closest_barycentric_local, _) = edges_projected
+            .reduce(
+                |(edge_index_a, edge_barycentric_a, distance_sq_a),
+                 (edge_index_b, edge_barycentric_b, distance_sq_b)| {
+                    if distance_sq_b < distance_sq_a {
+                        (edge_index_b, edge_barycentric_b, distance_sq_b)
+                    } else {
+                        (edge_index_a, edge_barycentric_a, distance_sq_a)
+                    }
+                },
+            )
+            .unwrap();
+        Self::edge_barycentric_local_to_global(closest_edge_index, closest_barycentric_local)
     }
 
     pub fn are_valid_poles(poles: [usize; 2], points: &[Point3<T>; 6]) -> bool {
