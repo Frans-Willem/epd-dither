@@ -1,10 +1,10 @@
 use nalgebra::base::{Scalar, Vector2, Vector3};
 use nalgebra::geometry::Point3;
-use nalgebra::{ClosedAddAssign, ClosedDivAssign, ClosedMulAssign, ClosedSubAssign};
+use nalgebra::{ClosedAddAssign, ClosedDivAssign, ClosedMulAssign, ClosedSubAssign, ComplexField};
 use num_traits::identities::{One, Zero};
 use num_traits::{one, zero};
 
-pub struct LineProjector<T: Scalar> {
+pub struct LineProjector<T: Scalar + ComplexField> {
     pub origin: Point3<T>,
     pub direction: Vector3<T>,
     pub length_squared: T,
@@ -12,6 +12,7 @@ pub struct LineProjector<T: Scalar> {
 
 impl<
     T: Scalar
+        + ComplexField
         + ClosedSubAssign
         + ClosedMulAssign
         + ClosedAddAssign
@@ -25,9 +26,7 @@ impl<
         let [a, b] = vertices;
         let direction = b - &a;
         let origin = a;
-        // Use direction `dot` direction instead of norm_squared, as norm_squared forces T:
-        // ComplexField
-        let length_squared = direction.dot(&direction);
+        let length_squared = T::from_real(direction.norm_squared());
         LineProjector {
             origin,
             direction,
@@ -42,7 +41,7 @@ impl<
             return Vector2::new(one(), zero());
         }
         let origin_to_pt: Vector3<T> = pt - &self.origin;
-        let origin_to_pt_dist_sq: T = origin_to_pt.dot(&origin_to_pt);
+        let origin_to_pt_dist_sq: T::RealField = origin_to_pt.norm_squared();
         if origin_to_pt_dist_sq.is_zero() {
             // A and P are the same, just return [1,0]
             return Vector2::new(one(), zero());

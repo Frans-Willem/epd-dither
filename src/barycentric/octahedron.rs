@@ -8,7 +8,7 @@ use num_traits::identities::{One, Zero};
 use num_traits::{one, zero};
 use tinyvec::{Array, ArrayVec};
 
-pub struct OctahedronProjector<T: Scalar> {
+pub struct OctahedronProjector<T: Scalar + ComplexField> {
     /*
      * Projector for each of the 4 wedges. Each wedge goes from north to south, subsequently from a
      * to b, b to c, c to d, d to a.
@@ -27,7 +27,8 @@ pub struct OctahedronProjector<T: Scalar> {
     edges: [LineProjector<T>; 12],
 }
 
-impl<
+impl<T> OctahedronProjector<T>
+where
     T: Scalar
         + ComplexField
         + ClosedSubAssign
@@ -37,7 +38,6 @@ impl<
         + Zero
         + One
         + PartialOrd,
-> OctahedronProjector<T>
 {
     pub fn new(vertices: [Point3<T>; 6]) -> Self {
         /*

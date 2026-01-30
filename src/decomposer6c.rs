@@ -155,29 +155,21 @@ where
                 barycentric_global
             }
             Decomposer6CAxisStrategy::Closest => {
-                let (axis, _) = 
-                self.axis.iter().map(|axis| {
-                    (axis, axis.distance_calc.distance_squared(color))
-                }).reduce(|a,b| {
-                    if b.1 < a.1 {
-                        b
-                    } else {
-                        a
-                    }
-                }).unwrap();
+                let (axis, _) = self
+                    .axis
+                    .iter()
+                    .map(|axis| (axis, axis.distance_calc.distance_squared(color)))
+                    .reduce(|a, b| if b.1 < a.1 { b } else { a })
+                    .unwrap();
                 axis.project(color).0
             }
             Decomposer6CAxisStrategy::Furthest => {
-                let (axis, _) = 
-                self.axis.iter().map(|axis| {
-                    (axis, axis.distance_calc.distance_squared(color))
-                }).reduce(|a,b| {
-                    if b.1 > a.1 {
-                        b
-                    } else {
-                        a
-                    }
-                }).unwrap();
+                let (axis, _) = self
+                    .axis
+                    .iter()
+                    .map(|axis| (axis, axis.distance_calc.distance_squared(color)))
+                    .reduce(|a, b| if b.1 > a.1 { b } else { a })
+                    .unwrap();
                 axis.project(color).0
             }
         }

@@ -6,12 +6,13 @@ use num_traits::{one, zero};
 
 use crate::barycentric::line::LineProjector;
 
-pub struct TriangleProjector<T: Scalar> {
+pub struct TriangleProjector<T: Scalar + ComplexField> {
     v1: Point3<T>,
     project_matrix: Matrix2x3<T>,
 }
 
-impl<
+impl<T> TriangleProjector<T>
+where
     T: Scalar
         + ComplexField
         + ClosedSubAssign
@@ -21,7 +22,6 @@ impl<
         + Zero
         + One
         + PartialOrd,
-> TriangleProjector<T>
 {
     pub fn new(vertices: [Point3<T>; 3]) -> Self {
         // Method used:
@@ -63,12 +63,13 @@ impl<
     }
 }
 
-pub struct ClippingTriangleProjector<T: Scalar> {
+pub struct ClippingTriangleProjector<T: Scalar + ComplexField> {
     vertices: Matrix3<T>, // Each column is a vertex, such that vertices * barycentric == point
     lines: [LineProjector<T>; 3], // Line x is the line from vertex[(x+1)%3] to vertices[(x+2)%3]
     normal_project: TriangleProjector<T>,
 }
-impl<
+impl<T> ClippingTriangleProjector<T>
+where
     T: Scalar
         + ComplexField
         + ClosedSubAssign
@@ -78,7 +79,6 @@ impl<
         + Zero
         + One
         + PartialOrd,
-> ClippingTriangleProjector<T>
 {
     pub fn new(vertices: [Point3<T>; 3]) -> Self {
         let lines = [0, 1, 2].map(|i| {
