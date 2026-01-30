@@ -180,11 +180,6 @@ fn main() {
     let palette_as_points = PALETTE.map(color_to_point);
     let decomposer = Decomposer6C::new(&palette_as_points).unwrap();
 
-    // NOTE: Maybe the octahedron isn't convex at all, maybe blue-green crosses "behind" the north
-    // to south pole, and maybe we can just ignore that one. Would that even affect both
-    // pole-barycentric-coordinates being <0
-    // TODO: Check why there are faces towards white being checked, that shouldn't happen at all :/
-
     let strategy = match args.axis {
         AxisStrategy::Average => Decomposer6CAxisStrategy::Average,
         AxisStrategy::Closest => Decomposer6CAxisStrategy::Closest,
