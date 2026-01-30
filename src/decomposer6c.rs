@@ -112,11 +112,11 @@ where
         + PartialOrd,
 {
     pub fn new(colors: &[Point3<T>; 6]) -> Option<Self> {
-        let opposite_map = OctahedronProjector::find_opposites(&colors)?;
+        let opposite_map = OctahedronProjector::find_opposites(colors)?;
         let axis: [Decomposer6CAxis<T>; 3] = crate::helpers::opt_array_transpose(core::array::from_fn(|axis_index| {
             let vertex_index_to_color: [usize; 6] = [
-                opposite_map[(axis_index + 0) % opposite_map.len()].0,
-                opposite_map[(axis_index + 0) % opposite_map.len()].1,
+                opposite_map[axis_index % opposite_map.len()].0,
+                opposite_map[axis_index % opposite_map.len()].1,
                 opposite_map[(axis_index + 1) % opposite_map.len()].0,
                 opposite_map[(axis_index + 2) % opposite_map.len()].0,
                 opposite_map[(axis_index + 1) % opposite_map.len()].1,

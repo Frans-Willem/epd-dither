@@ -207,7 +207,7 @@ fn main() {
             NoiseSource::White => rand::rng().sample(StandardUniform),
         };
         let index = pick_from_barycentric_weights(barycentric, noise);
-        let value = PALETTE[index].clone();
+        let value = PALETTE[index];
         *pixel = value;
     }
     println!("Converting back to U8");
