@@ -135,7 +135,10 @@ impl<
             if barycentric_local_min >= zero() {
                 // Point lies in this wedge, so convert to global barycentric coordinates and we're
                 // off to the races!
-                return (Self::wedge_barycentric_local_to_global(wedge_index, barycentric_local), true);
+                return (
+                    Self::wedge_barycentric_local_to_global(wedge_index, barycentric_local),
+                    true,
+                );
             }
             // In case a point lies in the rounding errors between the wedges, keep track of the one
             // with the highest minimum barycentric coordinate (e.g. the one closest to 0)
@@ -164,10 +167,10 @@ impl<
                         // Point lies outside the octahedron, but projects cleanly onto this face,
                         // meaning the point on this face is the closest to it! (as long as all faces are
                         // convex)
-                        return (Self::face_barycentric_local_to_global(
-                            face_index,
-                            barycentric_local,
-                        ), false);
+                        return (
+                            Self::face_barycentric_local_to_global(face_index, barycentric_local),
+                            false,
+                        );
                     }
                     if barycentric_local[0] <= zero() {
                         // Barycentric coordinate for pole <0 means the projected point lies on or beyond
@@ -205,18 +208,15 @@ impl<
             let distance_sq = (edge.bary_to_point(&barycentric_local) - pt).norm_squared();
             (edge_index, barycentric_local, distance_sq)
         });
-        let closest_edge = edges_projected
-            .reduce(
-                |a,b| {
-                    if b.2 < a.2 {
-                        b
-                    } else {
-                        a
-                    }
-                },
-            );
+        let closest_edge = edges_projected.reduce(|a, b| if b.2 < a.2 { b } else { a });
         if let Some((closest_edge_index, closest_barycentric_local, _)) = closest_edge {
-            (Self::edge_barycentric_local_to_global(closest_edge_index, closest_barycentric_local), false)
+            (
+                Self::edge_barycentric_local_to_global(
+                    closest_edge_index,
+                    closest_barycentric_local,
+                ),
+                false,
+            )
         } else {
             // None of the edges were checked, so none of the faces indicated the point was outside,
             // so the point was inside of the octahedron, just in the rounding errors between the

@@ -1,4 +1,4 @@
-use epd_dither::barycentric::octahedron::OctahedronProjector;
+use epd_dither::decomposer6c::{Decomposer6C, Decomposer6CAxisStrategy};
 use image::{DynamicImage, ImageReader, Rgb};
 use nalgebra::Vector6;
 use nalgebra::geometry::Point3;
@@ -60,6 +60,56 @@ impl std::str::FromStr for NoiseSource {
     }
 }
 
+#[derive(Clone, Debug)]
+enum AxisStrategy {
+    Average,
+    Closest,
+    Furthest,
+    Color(usize),
+}
+
+impl AxisStrategy {
+    const LONG_HELP: &'static str = concat!(
+        "Which central axis to use for decomposition.\n\n",
+        "Accepted values:\n",
+        " average: Take average of decomposition over each possible axis\n",
+        " closest: Decompose using the axis closest to the color\n",
+        " furthest: Decompose using the axis furthest from the color\n",
+        " color:<N>: Decompose using the central axis belonging to this color index\n",
+        "\n",
+        "Examples:\n",
+        " --axis average\n",
+        " --axis closest\n",
+        " --axis furthest\n",
+        " --axis color:0\n",
+    );
+}
+
+impl std::str::FromStr for AxisStrategy {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "average" => Ok(AxisStrategy::Average),
+            "closest" => Ok(AxisStrategy::Closest),
+            "furthest" => Ok(AxisStrategy::Furthest),
+            _ if s.starts_with("color:") => {
+                let n_str = &s["color:".len()..];
+                let n = n_str.parse::<usize>().map_err(|_| {
+                    format!(
+                        "invalid value `{s}`: expected `color:<N>` where N is a positive integer"
+                    )
+                })?;
+                Ok(AxisStrategy::Color(n))
+            }
+            _ => Err(format!(
+                "invalid value `{s}` for `--axis`\n\n{}",
+                AxisStrategy::LONG_HELP
+            )),
+        }
+    }
+}
+
 #[derive(Parser)]
 #[command(name = "dither")]
 struct Args {
@@ -69,8 +119,8 @@ struct Args {
     output_file: String,
     #[arg(long, value_name="NOISE",long_help=NoiseSource::LONG_HELP,default_value = "ign")]
     noise: NoiseSource,
-    #[arg(long)]
-    strategy: usize,
+    #[arg(long, value_name="AXIS", long_help=AxisStrategy::LONG_HELP,default_value = "closest")]
+    axis: AxisStrategy,
 }
 
 #[allow(dead_code)]
@@ -128,28 +178,21 @@ fn main() {
         .into_rgb32f();
     println!("Opened image");
     let palette_as_points = PALETTE.map(color_to_point);
-    let opposite_map = OctahedronProjector::find_opposites(&palette_as_points).unwrap();
-    let axis = opposite_map
-        .iter()
-        .enumerate()
-        .find(|(_, (a, b))| *a == args.strategy || *b == args.strategy)
-        .map(|(index, _)| index)
-        .unwrap();
-    println!("Axis: {:?} {:?}", axis, opposite_map[axis]);
-    let ordering: [usize; 6] = [
-        opposite_map[(axis + 0) % 3].0,
-        opposite_map[(axis + 0) % 3].1,
-        opposite_map[(axis + 1) % 3].0,
-        opposite_map[(axis + 2) % 3].0,
-        opposite_map[(axis + 1) % 3].1,
-        opposite_map[(axis + 2) % 3].1,
-    ];
-    let projector = OctahedronProjector::new(ordering.map(|i| palette_as_points[i].clone()));
+    let decomposer = Decomposer6C::new(&palette_as_points).unwrap();
 
     // NOTE: Maybe the octahedron isn't convex at all, maybe blue-green crosses "behind" the north
     // to south pole, and maybe we can just ignore that one. Would that even affect both
     // pole-barycentric-coordinates being <0
     // TODO: Check why there are faces towards white being checked, that shouldn't happen at all :/
+
+    let strategy = match args.axis {
+        AxisStrategy::Average => Decomposer6CAxisStrategy::Average,
+        AxisStrategy::Closest => Decomposer6CAxisStrategy::Closest,
+        AxisStrategy::Furthest => Decomposer6CAxisStrategy::Furthest,
+        AxisStrategy::Color(c) => {
+            Decomposer6CAxisStrategy::Axis(decomposer.get_axis_from_color(c).unwrap())
+        }
+    };
 
     let mut input = input;
     println!("Iterating over pixels");
@@ -157,11 +200,7 @@ fn main() {
         let value: Rgb<f32> = *pixel;
 
         let value = color_to_point(value);
-        let barycentric_unordered: Vector6<f32> = projector.project(&value).0;
-        let mut barycentric: Vector6<f32> = Default::default();
-        for (from_index, to_index) in ordering.iter().enumerate() {
-            barycentric[*to_index] = barycentric_unordered[from_index]
-        }
+        let barycentric: Vector6<f32> = decomposer.decompose(&value, strategy);
         let noise = match args.noise {
             NoiseSource::Bayer(Some(max_depth)) => {
                 epd_dither::noise::bayer(x as usize, y as usize, max_depth)
