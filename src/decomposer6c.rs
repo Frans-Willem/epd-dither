@@ -17,14 +17,18 @@ where
     T: ClosedSubAssign,
     T: ComplexField,
 {
-    fn new(vertices: [Point3<T>; 2]) -> Self {
+    fn new(vertices: [Point3<T>; 2]) -> Option<Self> {
         let [origin, target] = vertices;
         let direction = target - &origin;
         let direction_len_sq = direction.norm_squared();
-        Self {
+        if direction_len_sq.is_zero() {
+            None
+        } else {
+        Some(Self {
             origin,
             direction,
             direction_len_sq,
+        })
         }
     }
 
@@ -77,9 +81,9 @@ where
         }
         let projector = OctahedronProjector::new(
             vertex_index_to_color.map(|color_index| colors[color_index].clone()),
-        );
+        )?;
         let distance_calc =
-            LineDistanceCalculator::new(poles.map(|color_index| colors[color_index].clone()));
+            LineDistanceCalculator::new(poles.map(|color_index| colors[color_index].clone()))?;
 
         Some(Self {
             poles,
@@ -109,7 +113,7 @@ where
 {
     pub fn new(colors: &[Point3<T>; 6]) -> Option<Self> {
         let opposite_map = OctahedronProjector::find_opposites(&colors)?;
-        let axis: [Decomposer6CAxis<T>; 3] = core::array::from_fn(|axis_index| {
+        let axis: [Decomposer6CAxis<T>; 3] = crate::helpers::opt_array_transpose(core::array::from_fn(|axis_index| {
             let vertex_index_to_color: [usize; 6] = [
                 opposite_map[(axis_index + 0) % opposite_map.len()].0,
                 opposite_map[(axis_index + 0) % opposite_map.len()].1,
@@ -118,8 +122,8 @@ where
                 opposite_map[(axis_index + 1) % opposite_map.len()].1,
                 opposite_map[(axis_index + 2) % opposite_map.len()].1,
             ];
-            Decomposer6CAxis::new(vertex_index_to_color, colors).unwrap()
-        });
+            Decomposer6CAxis::new(vertex_index_to_color, colors)
+        }))?;
         Some(Self { axis })
     }
 
@@ -160,7 +164,7 @@ where
                     .iter()
                     .map(|axis| (axis, axis.distance_calc.distance_squared(color)))
                     .reduce(|a, b| if b.1 < a.1 { b } else { a })
-                    .unwrap();
+                    .unwrap_or((&self.axis[0], num_traits::zero()));
                 axis.project(color).0
             }
             Decomposer6CAxisStrategy::Furthest => {
@@ -169,7 +173,7 @@ where
                     .iter()
                     .map(|axis| (axis, axis.distance_calc.distance_squared(color)))
                     .reduce(|a, b| if b.1 > a.1 { b } else { a })
-                    .unwrap();
+                    .unwrap_or((&self.axis[0], num_traits::zero()));
                 axis.project(color).0
             }
         }

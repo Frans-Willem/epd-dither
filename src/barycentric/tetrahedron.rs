@@ -1,4 +1,4 @@
-use nalgebra::base::{Matrix4, Scalar, Vector4};
+use nalgebra::base::{Matrix4, Scalar, Vector4,Vector3};
 use nalgebra::geometry::Point3;
 use nalgebra::{ClosedAddAssign, ClosedDivAssign, ClosedMulAssign, ComplexField};
 use num_traits::identities::{One, Zero};
@@ -11,7 +11,7 @@ pub struct TetrahedronProjector<T: Scalar> {
 impl<T: Scalar + ComplexField + ClosedMulAssign + ClosedAddAssign + ClosedDivAssign + Zero + One>
     TetrahedronProjector<T>
 {
-    pub fn new(vertices: [Point3<T>; 4]) -> Self {
+    pub fn new(vertices: [Point3<T>; 4]) -> Option<Self> {
         // Method used:
         // Create a matrix from barycentric coordinates to [x,y,z,1]
         // of the following form:
@@ -21,11 +21,11 @@ impl<T: Scalar + ComplexField + ClosedMulAssign + ClosedAddAssign + ClosedDivAss
         // [ 1  1  1  1  ]
         let from_barycentric: Matrix4<T> =
             Matrix4::from_columns(&vertices.map(|x| x.to_homogeneous()));
-        let to_barycentric: Matrix4<T> = from_barycentric.clone().try_inverse().unwrap();
-        TetrahedronProjector {
+        let to_barycentric: Matrix4<T> = from_barycentric.clone().try_inverse()?;
+        Some(TetrahedronProjector {
             to_barycentric,
             from_barycentric,
-        }
+        })
     }
 
     pub fn project(&self, pt: &Point3<T>) -> Vector4<T> {
@@ -33,6 +33,6 @@ impl<T: Scalar + ComplexField + ClosedMulAssign + ClosedAddAssign + ClosedDivAss
     }
 
     pub fn bary_to_point(&self, barycentric_coords: &Vector4<T>) -> Point3<T> {
-        Point3::from_homogeneous(&self.from_barycentric * barycentric_coords).unwrap()
+        Point3::from_homogeneous(&self.from_barycentric * barycentric_coords).unwrap_or(Point3::from(num_traits::zero::<Vector3<T>>()))
     }
 }

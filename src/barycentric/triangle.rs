@@ -23,7 +23,7 @@ where
         + One
         + PartialOrd,
 {
-    pub fn new(vertices: [Point3<T>; 3]) -> Self {
+    pub fn new(vertices: [Point3<T>; 3]) -> Option<Self> {
         // Method used:
         // Moeller-Trumbore intersection algorithm
         // https://en.wikipedia.org/wiki/M%C3%B6ller%E2%80%93Trumbore_intersection_algorithm
@@ -44,12 +44,12 @@ where
         premul.set_column(2, &v1_to_v3);
 
         // Matrix such that [t,u,v] = (P - v1) * project_matrix
-        let project_matrix_tuv: Matrix3<T> = premul.try_inverse().unwrap();
+        let project_matrix_tuv: Matrix3<T> = premul.try_inverse()?;
 
         // Drop the row that would calculate t, as we're very rarely interested in it
         let project_matrix = project_matrix_tuv.fixed_view::<2, 3>(1, 0);
         let project_matrix: Matrix2x3<T> = project_matrix.clone_owned();
-        TriangleProjector { v1, project_matrix }
+        Some(TriangleProjector { v1, project_matrix })
     }
 
     pub fn project(&self, pt: &Point3<T>) -> Vector3<T> {
@@ -80,17 +80,17 @@ where
         + One
         + PartialOrd,
 {
-    pub fn new(vertices: [Point3<T>; 3]) -> Self {
-        let lines = [0, 1, 2].map(|i| {
+    pub fn new(vertices: [Point3<T>; 3]) -> Option<Self> {
+        let normal_project = TriangleProjector::new(vertices.clone())?;
+        let lines : [LineProjector<T>; 3] = crate::helpers::opt_array_transpose(core::array::from_fn(|i| {
             LineProjector::new([vertices[(i + 1) % 3].clone(), vertices[(i + 2) % 3].clone()])
-        });
-        let normal_project = TriangleProjector::new(vertices.clone());
+        }))?;
         let vertices: Matrix3<T> = Matrix3::from_columns(&vertices.map(|x| x.coords));
-        ClippingTriangleProjector {
+        Some(ClippingTriangleProjector {
             vertices,
             lines,
             normal_project,
-        }
+        })
     }
 
     pub fn project(&self, pt: &Point3<T>) -> Vector3<T> {

@@ -7,7 +7,7 @@ use num_traits::{one, zero};
 pub struct LineProjector<T: Scalar + ComplexField> {
     pub origin: Point3<T>,
     pub direction: Vector3<T>,
-    pub length_squared: T,
+    pub direction_div_length_squared: Vector3<T>,
 }
 
 impl<
@@ -22,31 +22,33 @@ impl<
         + PartialOrd,
 > LineProjector<T>
 {
-    pub fn new(vertices: [Point3<T>; 2]) -> Self {
+    pub fn new(vertices: [Point3<T>; 2]) -> Option<Self> {
         let [a, b] = vertices;
         let direction = b - &a;
         let origin = a;
         let length_squared = T::from_real(direction.norm_squared());
-        LineProjector {
-            origin,
-            direction,
-            length_squared,
+        if !length_squared.is_zero() {
+            // TODO: What happens when length_squared is zero?
+            let direction_div_length_squared = &direction / length_squared.clone();
+            Some(LineProjector {
+                origin,
+                direction,
+                direction_div_length_squared,
+            })
+        } else {
+            None
         }
     }
 
     // Projects to barycentric coordinates
     pub fn project(&self, pt: &Point3<T>) -> Vector2<T> {
-        if self.length_squared.is_zero() {
-            // length of direction is zero, so line is a point
-            return Vector2::new(one(), zero());
-        }
         let origin_to_pt: Vector3<T> = pt - &self.origin;
         let origin_to_pt_dist_sq: T::RealField = origin_to_pt.norm_squared();
         if origin_to_pt_dist_sq.is_zero() {
             // A and P are the same, just return [1,0]
             return Vector2::new(one(), zero());
         }
-        let t = origin_to_pt.dot(&self.direction) / self.length_squared.clone();
+        let t = origin_to_pt.dot(&self.direction_div_length_squared);
         Vector2::new(T::one() - t.clone(), t)
     }
 

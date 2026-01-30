@@ -39,20 +39,20 @@ where
         + One
         + PartialOrd,
 {
-    pub fn new(vertices: [Point3<T>; 6]) -> Self {
+    pub fn new(vertices: [Point3<T>; 6]) -> Option<Self> {
         /*
          * Vertex input ordering should be the two opposing poles first, then the other vertices in
          * cyclical order
          */
-        let wedges: [TetrahedronProjector<T>; 4] = core::array::from_fn(|i| {
+        let wedges: [TetrahedronProjector<T>; 4] = crate::helpers::opt_array_transpose(core::array::from_fn(|i| {
             TetrahedronProjector::new([
                 vertices[0].clone(),
                 vertices[1].clone(),
                 vertices[2 + (i % 4)].clone(),
                 vertices[2 + ((i + 1) % 4)].clone(),
             ])
-        });
-        let faces: [TriangleProjector<T>; 8] = core::array::from_fn(|i| {
+        }))?;
+        let faces: [TriangleProjector<T>; 8] = crate::helpers::opt_array_transpose(core::array::from_fn(|i| {
             // First four faces go from north, rest from south
             let pole = i / 4;
             TriangleProjector::new([
@@ -60,9 +60,9 @@ where
                 vertices[2 + (i % 4)].clone(),
                 vertices[2 + ((i + 1) % 4)].clone(),
             ])
-        });
+        }))?;
 
-        let edges: [LineProjector<T>; 12] = core::array::from_fn(|i| {
+        let edges: [LineProjector<T>; 12] = crate::helpers::opt_array_transpose(core::array::from_fn(|i| {
             // First four edges go from north, rest from south
             let pole_index = i / 4;
             let equator_index = i % 4;
@@ -77,13 +77,13 @@ where
                     vertices[2 + ((equator_index + 1) % 4)].clone(),
                 ])
             }
-        });
+        }))?;
 
-        OctahedronProjector {
+        Some(OctahedronProjector {
             wedges,
             faces,
             edges,
-        }
+        })
     }
 
     fn wedge_barycentric_local_to_global(index: usize, local: Vector4<T>) -> Vector6<T> {
@@ -222,7 +222,7 @@ where
             // so the point was inside of the octahedron, just in the rounding errors between the
             // wedges. Take the barycentric coordinates for the wedge with the highest minimum
             // barycentric coordinate (e.g. closest to being inside), and normalize it.
-            let (mut best, _) = best.unwrap();
+            let mut best = best.map(|(best, _)| best).unwrap_or(num_traits::zero());
             // Set all coordinates <0 to 0
             for coord in best.iter_mut() {
                 if *coord < zero() {
