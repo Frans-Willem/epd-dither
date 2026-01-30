@@ -1,13 +1,13 @@
 use nalgebra::base::{Scalar, Vector2, Vector3};
 use nalgebra::geometry::Point3;
-use nalgebra::{ClosedAddAssign, ClosedDivAssign, ClosedMulAssign, ClosedSubAssign, ComplexField};
+use nalgebra::{ClosedAddAssign, ClosedDivAssign, ClosedMulAssign, ClosedSubAssign};
 use num_traits::identities::{One, Zero};
 use num_traits::{one, zero};
 
 pub struct LineProjector<T: Scalar> {
     pub origin: Point3<T>,
     pub direction: Vector3<T>,
-    pub norm_squared: T,
+    pub length_squared: T,
 }
 
 impl<
@@ -16,7 +16,6 @@ impl<
         + ClosedMulAssign
         + ClosedAddAssign
         + ClosedDivAssign
-        + ComplexField
         + Zero
         + One
         + PartialOrd,
@@ -26,17 +25,19 @@ impl<
         let [a, b] = vertices;
         let direction = b - &a;
         let origin = a;
-        let norm_squared = direction.dot(&direction);
+        // Use direction `dot` direction instead of norm_squared, as norm_squared forces T:
+        // ComplexField
+        let length_squared = direction.dot(&direction);
         LineProjector {
             origin,
             direction,
-            norm_squared,
+            length_squared,
         }
     }
 
     // Projects to barycentric coordinates
     pub fn project(&self, pt: &Point3<T>) -> Vector2<T> {
-        if self.norm_squared.is_zero() {
+        if self.length_squared.is_zero() {
             // length of direction is zero, so line is a point
             return Vector2::new(one(), zero());
         }
@@ -46,7 +47,7 @@ impl<
             // A and P are the same, just return [1,0]
             return Vector2::new(one(), zero());
         }
-        let t = origin_to_pt.dot(&self.direction) / self.norm_squared.clone();
+        let t = origin_to_pt.dot(&self.direction) / self.length_squared.clone();
         Vector2::new(T::one() - t.clone(), t)
     }
 
