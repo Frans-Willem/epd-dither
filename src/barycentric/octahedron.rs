@@ -125,7 +125,7 @@ impl<
         ret
     }
 
-    pub fn project(&self, pt: &Point3<T>) -> Vector6<T> {
+    pub fn project(&self, pt: &Point3<T>) -> (Vector6<T>, bool) {
         let mut edges_to_check: [bool; 12] = [false; 12];
         let mut best: Option<(Vector6<T>, T)> = None;
         for (wedge_index, wedge) in self.wedges.iter().enumerate() {
@@ -135,7 +135,7 @@ impl<
             if barycentric_local_min >= zero() {
                 // Point lies in this wedge, so convert to global barycentric coordinates and we're
                 // off to the races!
-                return Self::wedge_barycentric_local_to_global(wedge_index, barycentric_local);
+                return (Self::wedge_barycentric_local_to_global(wedge_index, barycentric_local), true);
             }
             // In case a point lies in the rounding errors between the wedges, keep track of the one
             // with the highest minimum barycentric coordinate (e.g. the one closest to 0)
@@ -164,10 +164,10 @@ impl<
                         // Point lies outside the octahedron, but projects cleanly onto this face,
                         // meaning the point on this face is the closest to it! (as long as all faces are
                         // convex)
-                        return Self::face_barycentric_local_to_global(
+                        return (Self::face_barycentric_local_to_global(
                             face_index,
                             barycentric_local,
-                        );
+                        ), false);
                     }
                     if barycentric_local[0] <= zero() {
                         // Barycentric coordinate for pole <0 means the projected point lies on or beyond
@@ -187,25 +187,6 @@ impl<
                 }
             }
         }
-        // At this point, neither of the wedges indicate the point is in there, or on any of it's
-        // outside faces, and we kept a list
-        // of the edges that should be checked. If this list is empty, then the point probably
-        // lies somewhere in the rounding errors between the wedges.
-        if edges_to_check.iter().all(|to_check| !*to_check) {
-            let (mut best, _) = best.unwrap();
-            // Set all coordinates <0 to 0
-            for coord in best.iter_mut() {
-                if *coord < zero() {
-                    *coord = zero()
-                }
-            }
-            // Normalize such that the sum will be 1 again
-            let sum = best.sum();
-            if sum > zero() {
-                best /= sum;
-            }
-            return best;
-        }
         // Otherwise, find the closest projection to any of the edges
         let edges_to_check =
             edges_to_check
@@ -224,19 +205,37 @@ impl<
             let distance_sq = (edge.bary_to_point(&barycentric_local) - pt).norm_squared();
             (edge_index, barycentric_local, distance_sq)
         });
-        let (closest_edge_index, closest_barycentric_local, _) = edges_projected
+        let closest_edge = edges_projected
             .reduce(
-                |(edge_index_a, edge_barycentric_a, distance_sq_a),
-                 (edge_index_b, edge_barycentric_b, distance_sq_b)| {
-                    if distance_sq_b < distance_sq_a {
-                        (edge_index_b, edge_barycentric_b, distance_sq_b)
+                |a,b| {
+                    if b.2 < a.2 {
+                        b
                     } else {
-                        (edge_index_a, edge_barycentric_a, distance_sq_a)
+                        a
                     }
                 },
-            )
-            .unwrap();
-        Self::edge_barycentric_local_to_global(closest_edge_index, closest_barycentric_local)
+            );
+        if let Some((closest_edge_index, closest_barycentric_local, _)) = closest_edge {
+            (Self::edge_barycentric_local_to_global(closest_edge_index, closest_barycentric_local), false)
+        } else {
+            // None of the edges were checked, so none of the faces indicated the point was outside,
+            // so the point was inside of the octahedron, just in the rounding errors between the
+            // wedges. Take the barycentric coordinates for the wedge with the highest minimum
+            // barycentric coordinate (e.g. closest to being inside), and normalize it.
+            let (mut best, _) = best.unwrap();
+            // Set all coordinates <0 to 0
+            for coord in best.iter_mut() {
+                if *coord < zero() {
+                    *coord = zero()
+                }
+            }
+            // Normalize such that the sum will be 1 again
+            let sum = best.sum();
+            if sum > zero() {
+                best /= sum;
+            }
+            (best, true)
+        }
     }
 
     pub fn are_valid_poles(poles: [usize; 2], points: &[Point3<T>; 6]) -> bool {

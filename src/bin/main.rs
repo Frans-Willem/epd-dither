@@ -157,7 +157,7 @@ fn main() {
         let value: Rgb<f32> = *pixel;
 
         let value = color_to_point(value);
-        let barycentric_unordered: Vector6<f32> = projector.project(&value);
+        let barycentric_unordered: Vector6<f32> = projector.project(&value).0;
         let mut barycentric: Vector6<f32> = Default::default();
         for (from_index, to_index) in ordering.iter().enumerate() {
             barycentric[*to_index] = barycentric_unordered[from_index]
@@ -180,5 +180,5 @@ fn main() {
     let input: DynamicImage = input.into();
     let input = input.into_rgb8();
     input.save(args.output_file).unwrap();
-    print!("Done");
+    println!("Done");
 }
