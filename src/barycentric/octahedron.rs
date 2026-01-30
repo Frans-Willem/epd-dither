@@ -6,6 +6,7 @@ use nalgebra::geometry::Point3;
 use nalgebra::{ClosedAddAssign, ClosedDivAssign, ClosedMulAssign, ClosedSubAssign, ComplexField};
 use num_traits::identities::{One, Zero};
 use num_traits::{one, zero};
+use tinyvec::{Array, ArrayVec};
 
 pub struct OctahedronProjector<T: Scalar> {
     /*
@@ -224,13 +225,26 @@ impl<
         best.unwrap().0
     }
 
-    pub fn are_valid_poles(poles: [Point3<T>; 2], points: [Point3<T>; 4]) -> bool {
-        let [origin, target] = poles;
-        let neg_direction = &origin - &target;
+    pub fn are_valid_poles(poles: [usize; 2], points: &[Point3<T>; 6]) -> bool {
+        let [origin_index, target_index] = poles;
+        if origin_index >= points.len()
+            || target_index >= points.len()
+            || origin_index == target_index
+        {
+            return false;
+        }
+        let origin = &points[origin_index];
+        let target = &points[target_index];
+        let neg_direction = origin - target;
+        let equator_vertex_indices: [usize; 4] = (0..points.len())
+            .filter(|x| *x != origin_index && *x != target_index)
+            .collect::<ArrayVec<_>>()
+            .into_inner();
         let triangles = (0..4).map(|not_in_triangle| {
-            let in_triangle: [usize; 3] =
-                core::array::from_fn(|i| if i >= not_in_triangle { i + 1 } else { i });
-            in_triangle.map(|x| points[x].clone())
+            let in_triangle_indices: [usize; 3] =
+                core::array::from_fn(|i| if i >= not_in_triangle { i + 1 } else { i })
+                    .map(|i| equator_vertex_indices[i]);
+            in_triangle_indices.map(|x| points[x].clone())
         });
         let intersections = triangles.map(|triangle| {
             let [v1, v2, v3] = triangle;
@@ -245,7 +259,7 @@ impl<
             premul.set_column(1, &(v2 - &v1));
             premul.set_column(2, &(v3 - &v1));
             if let Some(inverse) = premul.try_inverse() {
-                let tuv: Vector3<T> = inverse * (&origin - &v1);
+                let tuv: Vector3<T> = inverse * (origin - &v1);
                 let [t, _, _] = tuv.into();
                 Some(t)
             } else {
@@ -279,6 +293,37 @@ impl<
             min_intersection >= zero() && max_intersection <= one()
         } else {
             false
+        }
+    }
+
+    fn swap_remove_match<A: Array>(
+        vec: &mut ArrayVec<A>,
+        f: impl Fn(&A::Item) -> bool,
+    ) -> Option<A::Item> {
+        for index in 0..vec.len() {
+            if f(&vec[index]) {
+                return Some(vec.swap_remove(index));
+            }
+        }
+        None
+    }
+
+    pub fn find_opposites(points: &[Point3<T>; 6]) -> Option<[(usize, usize); 3]> {
+        let mut results: ArrayVec<[(usize, usize); 3]> = ArrayVec::new();
+        let mut indices: ArrayVec<[usize; 6]> = core::array::from_fn(|i| i).into();
+        while let Some(candidate) = indices.pop() {
+            if let Some(opposite) = Self::swap_remove_match(&mut indices, |x| {
+                Self::are_valid_poles([candidate, *x], points)
+            }) {
+                results.push((candidate, opposite))
+            } else {
+                return None;
+            }
+        }
+        if results.len() == results.capacity() {
+            Some(results.into_inner())
+        } else {
+            None
         }
     }
 }

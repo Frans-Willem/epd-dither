@@ -69,6 +69,8 @@ struct Args {
     output_file: String,
     #[arg(long, value_name="NOISE",long_help=NoiseSource::LONG_HELP,default_value = "ign")]
     noise: NoiseSource,
+    #[arg(long)]
+    strategy: usize,
 }
 
 #[allow(dead_code)]
@@ -109,7 +111,7 @@ fn color_to_point(color: Rgb<f32>) -> Point3<f32> {
 fn pick_from_barycentric_weights(weights: Vector6<f32>, offset: f32) -> usize {
     let mut index = 0;
     let mut offset = offset;
-    while index + 1 < 6 && weights[index] < offset {
+    while index + 1 < 6 && weights[index] <= offset {
         offset -= weights[index];
         index += 1;
     }
@@ -125,28 +127,24 @@ fn main() {
         .unwrap()
         .into_rgb32f();
     println!("Opened image");
-    let projector = OctahedronProjector::new([
-        color_to_point(PALETTE[SpectraColors::Black as usize]),
-        color_to_point(PALETTE[SpectraColors::White as usize]),
-        color_to_point(PALETTE[SpectraColors::Blue as usize]),
-        color_to_point(PALETTE[SpectraColors::Green as usize]),
-        color_to_point(PALETTE[SpectraColors::Yellow as usize]),
-        color_to_point(PALETTE[SpectraColors::Red as usize]),
-    ]);
-
-    println!("Debugging");
-    OctahedronProjector::are_valid_poles(
-        [
-            color_to_point(PALETTE[SpectraColors::Green as usize]),
-            color_to_point(PALETTE[SpectraColors::Red as usize]),
-        ],
-        [
-            color_to_point(PALETTE[SpectraColors::Black as usize]),
-            color_to_point(PALETTE[SpectraColors::White as usize]),
-            color_to_point(PALETTE[SpectraColors::Blue as usize]),
-            color_to_point(PALETTE[SpectraColors::Yellow as usize]),
-        ],
-    );
+    let palette_as_points = PALETTE.map(color_to_point);
+    let opposite_map = OctahedronProjector::find_opposites(&palette_as_points).unwrap();
+    let axis = opposite_map
+        .iter()
+        .enumerate()
+        .find(|(_, (a, b))| *a == args.strategy || *b == args.strategy)
+        .map(|(index, _)| index)
+        .unwrap();
+    println!("Axis: {:?} {:?}", axis, opposite_map[axis]);
+    let ordering: [usize; 6] = [
+        opposite_map[(axis + 0) % 3].0,
+        opposite_map[(axis + 0) % 3].1,
+        opposite_map[(axis + 1) % 3].0,
+        opposite_map[(axis + 2) % 3].0,
+        opposite_map[(axis + 1) % 3].1,
+        opposite_map[(axis + 2) % 3].1,
+    ];
+    let projector = OctahedronProjector::new(ordering.map(|i| palette_as_points[i].clone()));
 
     // NOTE: Maybe the octahedron isn't convex at all, maybe blue-green crosses "behind" the north
     // to south pole, and maybe we can just ignore that one. Would that even affect both
@@ -159,15 +157,11 @@ fn main() {
         let value: Rgb<f32> = *pixel;
 
         let value = color_to_point(value);
-        let barycentric: Vector6<f32> = projector.project(&value);
-        let barycentric: Vector6<f32> = Vector6::new(
-            barycentric[0],
-            barycentric[1],
-            barycentric[2],
-            barycentric[3],
-            barycentric[5],
-            barycentric[4],
-        );
+        let barycentric_unordered: Vector6<f32> = projector.project(&value);
+        let mut barycentric: Vector6<f32> = Default::default();
+        for (from_index, to_index) in ordering.iter().enumerate() {
+            barycentric[*to_index] = barycentric_unordered[from_index]
+        }
         let noise = match args.noise {
             NoiseSource::Bayer(Some(max_depth)) => {
                 epd_dither::noise::bayer(x as usize, y as usize, max_depth)
