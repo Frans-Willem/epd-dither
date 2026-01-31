@@ -1,5 +1,5 @@
 use epd_dither::decomposer6c::{Decomposer6C, Decomposer6CAxisStrategy};
-use image::{DynamicImage, ImageReader, Rgb};
+use image::{DynamicImage, ImageReader, Rgb, ImageBuffer, Luma};
 use nalgebra::Vector6;
 use nalgebra::geometry::Point3;
 
@@ -12,6 +12,7 @@ enum NoiseSource {
     Bayer(Option<usize>),
     InterleavedGradient,
     White,
+    File(Box<ImageBuffer<Luma<f32>, Vec<f32>>>),
 }
 
 impl NoiseSource {
@@ -50,8 +51,12 @@ impl std::str::FromStr for NoiseSource {
                     )
                 })?;
                 Ok(NoiseSource::Bayer(Some(n)))
-            }
-
+            },
+            _ if s.starts_with("file:") => {
+                let f_str = &s["file:".len()..];
+                let input = ImageReader::open(f_str).unwrap().decode().unwrap().to_luma32f();
+                Ok(NoiseSource::File(Box::new(input)))
+            },
             _ => Err(format!(
                 "invalid value `{s}` for `--noise`\n\n{}",
                 NoiseSource::LONG_HELP
@@ -124,21 +129,39 @@ struct Args {
 }
 
 #[allow(dead_code)]
-const PALETTE: [Rgb<f32>; 6] = [
+const PALETTE_MINE: [Rgb<f32>; 6] = [
     Rgb([
-        0.22676264646610847,
+        0.226_762_65,
         0.0, //-0.0055970314385675474,
-        0.2597094644681131,
+        0.259_709_48,
     ]),
-    Rgb([0.7000095212021477, 0.8161663966432444, 0.7861384978213591]),
-    Rgb([0.2391826586300411, 0.1482584219935382, 0.596627604515917]),
-    Rgb([0.37804726446284537, 0.40898865257247025, 0.3388335156024263]),
-    Rgb([0.5903086439496402, 0.14710309178681208, 0.17200386219219121]),
+    Rgb([0.700_009_5, 0.816_166_4, 0.786_138_5]),
+    Rgb([0.239_182_67, 0.148_258_42, 0.596_627_6]),
+    Rgb([0.378_047_26, 0.408_988_65, 0.338_833_5]),
+    Rgb([0.590_308_67, 0.147_103_09, 0.172_003_87]),
     Rgb([
-        0.8417257856614314,
-        0.9126861145185275,
+        0.841_725_77,
+        0.912_686_1,
         0.0, //-0.053016650312371474,
     ]),
+];
+
+const PALETTE_EPDOPTIMIZE: [Rgb<u8>; 6] = [
+    Rgb([0x19, 0x1E, 0x21]),
+    Rgb([0xe8, 0xe8, 0xe8]),
+    Rgb([0x21, 0x57, 0xba]),
+    Rgb([0x12, 0x5f, 0x20]),
+    Rgb([0xb2, 0x13, 0x18]),
+    Rgb([0xef, 0xde, 0x44]),
+];
+
+const PALETTE_MEASURED: [Rgb<u8>; 6] = [
+    Rgb([179, 208, 200]),
+    Rgb([61, 38, 152]),
+    Rgb([96, 104, 86]),
+    Rgb([151, 38, 44]),
+    Rgb([215, 233, 0]),
+    Rgb([58, 0, 66]),
 ];
 
 #[allow(dead_code)]
@@ -177,7 +200,12 @@ fn main() {
         .unwrap()
         .into_rgb32f();
     println!("Opened image");
-    let palette_as_points = PALETTE.map(color_to_point);
+    println!("Palette used:");
+    for color in PALETTE_MEASURED {
+        println!("  #{:02X}{:02X}{:02X},", color.0[0], color.0[1], color.0[2]);
+    }
+    let palette_f32 = PALETTE_MEASURED.map(|c| Rgb(c.0.map(|x| (x as f32) / 255.0)));
+    let palette_as_points = palette_f32.map(color_to_point);
     let decomposer = Decomposer6C::new(&palette_as_points).unwrap();
 
     let strategy = match args.axis {
@@ -205,9 +233,10 @@ fn main() {
                 epd_dither::noise::interleaved_gradient_noise(x as f32, y as f32)
             }
             NoiseSource::White => rand::rng().sample(StandardUniform),
+            NoiseSource::File(ref f) => f.get_pixel(x as u32 % f.width(), y as u32 % f.height()).0[0].clone(),
         };
         let index = pick_from_barycentric_weights(barycentric, noise);
-        let value = PALETTE[index];
+        let value = palette_f32[index];
         *pixel = value;
     }
     println!("Converting back to U8");
