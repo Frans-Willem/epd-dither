@@ -17,9 +17,14 @@ The dithering works by first "decomposing" each pixel color into a mix of any of
 
 Examples
 --------
-| This library | Original | epdoptimize |
-|--------------|----------|-------------|
-| ![lena with this library](./documentation/lena_epd-dither.png) | ![lena original](./documentation/lena_original.png) | ![lena epdoptimize](./documentation/lena_epdoptimize.png) |
+| Original | Dithered |
+|----------|----------|
+| ![lena original](./documentation/lena_original.png) | ![lena with this library](./documentation/lena_epd-dither.png) |
+| | Dithered using this library with default settings and blue noise from HDR\_L\_0.png |
+|-|-|
+| ![lena original](./documentation/lena_original.png) | ![lena epdoptimize](./documentation/lena_epdoptimize.png) |
+| | Dithered using epdoptimize |
+|-|-|
 
 Note:
 epdoptimize was used with the default parameters, but with the same color palette as in this library. The epdoptimize color palette can not be used with this library as it does not form a regular octahedron.
