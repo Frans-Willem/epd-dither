@@ -1,4 +1,4 @@
-use nalgebra::base::{Matrix2x3, Matrix3, Scalar, Vector2, Vector3};
+use nalgebra::base::{Matrix3, Scalar, Vector3};
 use nalgebra::geometry::Point3;
 use nalgebra::{ClosedAddAssign, ClosedDivAssign, ClosedMulAssign, ClosedSubAssign, ComplexField};
 use num_traits::identities::{One, Zero};
@@ -8,7 +8,9 @@ use crate::barycentric::line::LineProjector;
 
 pub struct TriangleProjector<T: Scalar + ComplexField> {
     v1: Point3<T>,
-    project_matrix: Matrix2x3<T>,
+    // Matrix to project from a point (as Vector3) to t (distance to plane), u, and v. w can be
+    // calculated through w = 1 - u - v
+    project_matrix: Matrix3<T>,
 }
 
 impl<T> TriangleProjector<T>
@@ -35,6 +37,9 @@ where
         let v1_to_v2: Vector3<T> = v2 - &v1;
         let v1_to_v3: Vector3<T> = v3 - &v1;
         let normal: Vector3<T> = v1_to_v2.cross(&v1_to_v3);
+        let normal: Vector3<T> = normal.try_normalize(zero())?; // Normalize (e.g. ensure length is 1)
+        // normal, such that the t component is
+        // equal to the distance to the plane.
         let neg_normal: Vector3<T> = zero::<Vector3<T>>() - normal;
 
         // Matrix such that premul * [t,u,v] = P - v1
@@ -44,22 +49,24 @@ where
         premul.set_column(2, &v1_to_v3);
 
         // Matrix such that [t,u,v] = (P - v1) * project_matrix
-        let project_matrix_tuv: Matrix3<T> = premul.try_inverse()?;
+        let project_matrix: Matrix3<T> = premul.try_inverse()?;
 
-        // Drop the row that would calculate t, as we're very rarely interested in it
-        let project_matrix = project_matrix_tuv.fixed_view::<2, 3>(1, 0);
-        let project_matrix: Matrix2x3<T> = project_matrix.clone_owned();
         Some(TriangleProjector { v1, project_matrix })
     }
 
-    pub fn project(&self, pt: &Point3<T>) -> Vector3<T> {
+    /**
+     * Returns the barycentric coodinates of the point closest to the triangle's plane, as well as
+     * the distance to the triangle's plane. The sign of the distance indicates which side of the
+     * plane the point is in.
+     */
+    pub fn project(&self, pt: &Point3<T>) -> (Vector3<T>, T) {
         let v1_to_pt: Vector3<T> = pt - &self.v1;
-        let uv: Vector2<T> = &self.project_matrix * v1_to_pt;
-        let [u, v] = uv.into();
+        let tuv: Vector3<T> = &self.project_matrix * v1_to_pt;
+        let [t, u, v] = tuv.into();
         let w: T = one::<T>() - u.clone() - v.clone();
         // Triangle plane defined as
         // P = w*v1 + u*v2 + v * v3
-        Vector3::new(w, u, v)
+        (Vector3::new(w, u, v), t)
     }
 }
 
@@ -82,9 +89,10 @@ where
 {
     pub fn new(vertices: [Point3<T>; 3]) -> Option<Self> {
         let normal_project = TriangleProjector::new(vertices.clone())?;
-        let lines : [LineProjector<T>; 3] = crate::helpers::opt_array_transpose(core::array::from_fn(|i| {
-            LineProjector::new([vertices[(i + 1) % 3].clone(), vertices[(i + 2) % 3].clone()])
-        }))?;
+        let lines: [LineProjector<T>; 3] =
+            crate::helpers::opt_array_transpose(core::array::from_fn(|i| {
+                LineProjector::new([vertices[(i + 1) % 3].clone(), vertices[(i + 2) % 3].clone()])
+            }))?;
         let vertices: Matrix3<T> = Matrix3::from_columns(&vertices.map(|x| x.coords));
         Some(ClippingTriangleProjector {
             vertices,
@@ -93,7 +101,7 @@ where
         })
     }
 
-    pub fn project(&self, pt: &Point3<T>) -> Vector3<T> {
+    pub fn project(&self, pt: &Point3<T>) -> (Vector3<T>, T) {
         self.normal_project.project(pt)
     }
 
@@ -103,7 +111,7 @@ where
 
     // Returns barycentric coordinates, if it was clipped, and (if already calculated) distance^2
     pub fn clipping_project(&self, pt: &Point3<T>) -> (Vector3<T>, bool, Option<T::RealField>) {
-        let barycentric: Vector3<T> = self.project(pt);
+        let barycentric: Vector3<T> = self.project(pt).0;
         if barycentric.min() >= zero() {
             // Inside the triangle, no need to clip, hurrah!
             return (barycentric, false, None);

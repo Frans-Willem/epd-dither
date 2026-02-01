@@ -165,7 +165,7 @@ where
                     let other_pole = 1 - pole;
                     let face_index = (other_pole * 4) + wedge_index;
                     let face = &self.faces[face_index];
-                    let barycentric_local = face.project(pt);
+                    let barycentric_local = face.project(pt).0;
                     if barycentric_local.min() >= zero() {
                         // Point lies outside the octahedron, but projects cleanly onto this face,
                         // meaning the point on this face is the closest to it! (as long as all faces are
