@@ -1,5 +1,5 @@
 use epd_dither::decomposer6c::{Decomposer6C, Decomposer6CAxisStrategy};
-use image::{DynamicImage, ImageReader, Rgb, ImageBuffer, Luma};
+use image::{DynamicImage, ImageBuffer, ImageReader, Luma, Rgb};
 use nalgebra::Vector6;
 use nalgebra::geometry::Point3;
 
@@ -51,12 +51,16 @@ impl std::str::FromStr for NoiseSource {
                     )
                 })?;
                 Ok(NoiseSource::Bayer(Some(n)))
-            },
+            }
             _ if s.starts_with("file:") => {
                 let f_str = &s["file:".len()..];
-                let input = ImageReader::open(f_str).unwrap().decode().unwrap().to_luma32f();
+                let input = ImageReader::open(f_str)
+                    .unwrap()
+                    .decode()
+                    .unwrap()
+                    .to_luma32f();
                 Ok(NoiseSource::File(Box::new(input)))
-            },
+            }
             _ => Err(format!(
                 "invalid value `{s}` for `--noise`\n\n{}",
                 NoiseSource::LONG_HELP
@@ -233,7 +237,9 @@ fn main() {
                 epd_dither::noise::interleaved_gradient_noise(x as f32, y as f32)
             }
             NoiseSource::White => rand::rng().sample(StandardUniform),
-            NoiseSource::File(ref f) => f.get_pixel(x as u32 % f.width(), y as u32 % f.height()).0[0].clone(),
+            NoiseSource::File(ref f) => {
+                f.get_pixel(x as u32 % f.width(), y as u32 % f.height()).0[0].clone()
+            }
         };
         let index = pick_from_barycentric_weights(barycentric, noise);
         let value = palette_f32[index];

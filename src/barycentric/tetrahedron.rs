@@ -1,4 +1,4 @@
-use nalgebra::base::{Matrix4, Scalar, Vector4,Vector3};
+use nalgebra::base::{Matrix4, Scalar, Vector3, Vector4};
 use nalgebra::geometry::Point3;
 use nalgebra::{ClosedAddAssign, ClosedDivAssign, ClosedMulAssign, ComplexField};
 use num_traits::identities::{One, Zero};
@@ -33,6 +33,7 @@ impl<T: Scalar + ComplexField + ClosedMulAssign + ClosedAddAssign + ClosedDivAss
     }
 
     pub fn bary_to_point(&self, barycentric_coords: &Vector4<T>) -> Point3<T> {
-        Point3::from_homogeneous(&self.from_barycentric * barycentric_coords).unwrap_or(Point3::from(num_traits::zero::<Vector3<T>>()))
+        Point3::from_homogeneous(&self.from_barycentric * barycentric_coords)
+            .unwrap_or(Point3::from(num_traits::zero::<Vector3<T>>()))
     }
 }

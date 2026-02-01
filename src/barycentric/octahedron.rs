@@ -44,40 +44,43 @@ where
          * Vertex input ordering should be the two opposing poles first, then the other vertices in
          * cyclical order
          */
-        let wedges: [TetrahedronProjector<T>; 4] = crate::helpers::opt_array_transpose(core::array::from_fn(|i| {
-            TetrahedronProjector::new([
-                vertices[0].clone(),
-                vertices[1].clone(),
-                vertices[2 + (i % 4)].clone(),
-                vertices[2 + ((i + 1) % 4)].clone(),
-            ])
-        }))?;
-        let faces: [TriangleProjector<T>; 8] = crate::helpers::opt_array_transpose(core::array::from_fn(|i| {
-            // First four faces go from north, rest from south
-            let pole = i / 4;
-            TriangleProjector::new([
-                vertices[pole].clone(),
-                vertices[2 + (i % 4)].clone(),
-                vertices[2 + ((i + 1) % 4)].clone(),
-            ])
-        }))?;
+        let wedges: [TetrahedronProjector<T>; 4] =
+            crate::helpers::opt_array_transpose(core::array::from_fn(|i| {
+                TetrahedronProjector::new([
+                    vertices[0].clone(),
+                    vertices[1].clone(),
+                    vertices[2 + (i % 4)].clone(),
+                    vertices[2 + ((i + 1) % 4)].clone(),
+                ])
+            }))?;
+        let faces: [TriangleProjector<T>; 8] =
+            crate::helpers::opt_array_transpose(core::array::from_fn(|i| {
+                // First four faces go from north, rest from south
+                let pole = i / 4;
+                TriangleProjector::new([
+                    vertices[pole].clone(),
+                    vertices[2 + (i % 4)].clone(),
+                    vertices[2 + ((i + 1) % 4)].clone(),
+                ])
+            }))?;
 
-        let edges: [LineProjector<T>; 12] = crate::helpers::opt_array_transpose(core::array::from_fn(|i| {
-            // First four edges go from north, rest from south
-            let pole_index = i / 4;
-            let equator_index = i % 4;
-            if pole_index < 2 {
-                LineProjector::new([
-                    vertices[pole_index].clone(),
-                    vertices[2 + equator_index].clone(),
-                ])
-            } else {
-                LineProjector::new([
-                    vertices[2 + (equator_index % 4)].clone(),
-                    vertices[2 + ((equator_index + 1) % 4)].clone(),
-                ])
-            }
-        }))?;
+        let edges: [LineProjector<T>; 12] =
+            crate::helpers::opt_array_transpose(core::array::from_fn(|i| {
+                // First four edges go from north, rest from south
+                let pole_index = i / 4;
+                let equator_index = i % 4;
+                if pole_index < 2 {
+                    LineProjector::new([
+                        vertices[pole_index].clone(),
+                        vertices[2 + equator_index].clone(),
+                    ])
+                } else {
+                    LineProjector::new([
+                        vertices[2 + (equator_index % 4)].clone(),
+                        vertices[2 + ((equator_index + 1) % 4)].clone(),
+                    ])
+                }
+            }))?;
 
         Some(OctahedronProjector {
             wedges,

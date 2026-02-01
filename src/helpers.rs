@@ -5,4 +5,3 @@ pub(crate) fn opt_array_transpose<T, const N: usize>(arr: [Option<T>; N]) -> Opt
         None
     }
 }
-
