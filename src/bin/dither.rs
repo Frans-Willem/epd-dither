@@ -1,9 +1,10 @@
+use epd_dither::decomposer_bruteforce::{DecomposerBruteforce, DecomposerBruteforceStrategy};
 use epd_dither::decomposer6c::{Decomposer6C, Decomposer6CAxisStrategy};
 use image::{DynamicImage, ImageBuffer, ImageReader, Luma, Rgb};
-use nalgebra::Vector6;
 use nalgebra::geometry::Point3;
+use nalgebra::{DVector, Vector6};
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use rand::distr::StandardUniform;
 use rand::prelude::*;
 
@@ -69,54 +70,12 @@ impl std::str::FromStr for NoiseSource {
     }
 }
 
-#[derive(Clone, Debug)]
-enum AxisStrategy {
-    Average,
-    Closest,
-    Furthest,
-    Color(usize),
-}
-
-impl AxisStrategy {
-    const LONG_HELP: &'static str = concat!(
-        "Which central axis to use for decomposition.\n\n",
-        "Accepted values:\n",
-        " average: Take average of decomposition over each possible axis\n",
-        " closest: Decompose using the axis closest to the color\n",
-        " furthest: Decompose using the axis furthest from the color\n",
-        " color:<N>: Decompose using the central axis belonging to this color index\n",
-        "\n",
-        "Examples:\n",
-        " --axis average\n",
-        " --axis closest\n",
-        " --axis furthest\n",
-        " --axis color:0\n",
-    );
-}
-
-impl std::str::FromStr for AxisStrategy {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "average" => Ok(AxisStrategy::Average),
-            "closest" => Ok(AxisStrategy::Closest),
-            "furthest" => Ok(AxisStrategy::Furthest),
-            _ if s.starts_with("color:") => {
-                let n_str = &s["color:".len()..];
-                let n = n_str.parse::<usize>().map_err(|_| {
-                    format!(
-                        "invalid value `{s}`: expected `color:<N>` where N is a positive integer"
-                    )
-                })?;
-                Ok(AxisStrategy::Color(n))
-            }
-            _ => Err(format!(
-                "invalid value `{s}` for `--axis`\n\n{}",
-                AxisStrategy::LONG_HELP
-            )),
-        }
-    }
+#[derive(Clone, Debug, ValueEnum)]
+enum DecomposeStrategy {
+    OctahedronClosest,
+    OctahedronFurthest,
+    BruteforceMix,
+    BruteforceDominant,
 }
 
 #[derive(Parser)]
@@ -128,8 +87,8 @@ struct Args {
     output_file: String,
     #[arg(long, value_name="NOISE",long_help=NoiseSource::LONG_HELP,default_value = "ign")]
     noise: NoiseSource,
-    #[arg(long, value_name="AXIS", long_help=AxisStrategy::LONG_HELP,default_value = "closest")]
-    axis: AxisStrategy,
+    #[arg(long, value_name = "STRATEGY", default_value = "octahedron-closest")]
+    strategy: DecomposeStrategy,
 }
 
 #[allow(dead_code)]
@@ -185,7 +144,7 @@ fn color_to_point(color: Rgb<f32>) -> Point3<f32> {
 }
 
 // TODO: Move to library
-fn pick_from_barycentric_weights(weights: Vector6<f32>, offset: f32) -> usize {
+fn pick_from_barycentric_weights(weights: DVector<f32>, offset: f32) -> usize {
     let mut index = 0;
     let mut offset = offset;
     while index + 1 < 6 && weights[index] <= offset {
@@ -193,6 +152,12 @@ fn pick_from_barycentric_weights(weights: Vector6<f32>, offset: f32) -> usize {
         index += 1;
     }
     index
+}
+
+fn owned_to_dynamic_vector<T: nalgebra::Scalar, const N: usize>(
+    vec: nalgebra::SVector<T, N>,
+) -> DVector<T> {
+    DVector::from_column_slice(vec.as_slice())
 }
 
 fn main() {
@@ -205,19 +170,35 @@ fn main() {
         .into_rgb32f();
     println!("Opened image");
     println!("Palette used:");
-    for color in PALETTE_MEASURED {
+    // TODO: Allow dither and output palette to be specified
+    let palette_u8 = PALETTE_EPDOPTIMIZE;
+    for color in palette_u8 {
         println!("  #{:02X}{:02X}{:02X},", color.0[0], color.0[1], color.0[2]);
     }
-    let palette_f32 = PALETTE_MEASURED.map(|c| Rgb(c.0.map(|x| (x as f32) / 255.0)));
+    let palette_f32 = palette_u8.map(|c| Rgb(c.0.map(|x| (x as f32) / 255.0)));
     let palette_as_points = palette_f32.map(color_to_point);
-    let decomposer = Decomposer6C::new(&palette_as_points).unwrap();
-
-    let strategy = match args.axis {
-        AxisStrategy::Average => Decomposer6CAxisStrategy::Average,
-        AxisStrategy::Closest => Decomposer6CAxisStrategy::Closest,
-        AxisStrategy::Furthest => Decomposer6CAxisStrategy::Furthest,
-        AxisStrategy::Color(c) => {
-            Decomposer6CAxisStrategy::Axis(decomposer.get_axis_from_color(c).unwrap())
+    let decompose: Box<dyn Fn(Point3<f32>) -> DVector<f32>> = match args.strategy {
+        DecomposeStrategy::OctahedronClosest => {
+            let decomposer = Decomposer6C::new(&palette_as_points).unwrap();
+            Box::new(move |x| {
+                owned_to_dynamic_vector(decomposer.decompose(&x, Decomposer6CAxisStrategy::Closest))
+            })
+        }
+        DecomposeStrategy::OctahedronFurthest => {
+            let decomposer = Decomposer6C::new(&palette_as_points).unwrap();
+            Box::new(move |x| {
+                owned_to_dynamic_vector(
+                    decomposer.decompose(&x, Decomposer6CAxisStrategy::Furthest),
+                )
+            })
+        }
+        DecomposeStrategy::BruteforceMix => {
+            let decomposer = DecomposerBruteforce::new(&palette_as_points).unwrap();
+            Box::new(move |x| decomposer.decompose(&x, DecomposerBruteforceStrategy::FavorMix))
+        }
+        DecomposeStrategy::BruteforceDominant => {
+            let decomposer = DecomposerBruteforce::new(&palette_as_points).unwrap();
+            Box::new(move |x| decomposer.decompose(&x, DecomposerBruteforceStrategy::FavorDominant))
         }
     };
 
@@ -227,7 +208,7 @@ fn main() {
         let value: Rgb<f32> = *pixel;
 
         let value = color_to_point(value);
-        let barycentric: Vector6<f32> = decomposer.decompose(&value, strategy);
+        let barycentric: DVector<f32> = decompose(value);
         let noise = match args.noise {
             NoiseSource::Bayer(Some(max_depth)) => {
                 epd_dither::noise::bayer(x as usize, y as usize, max_depth)
