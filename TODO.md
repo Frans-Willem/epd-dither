@@ -1,7 +1,8 @@
-- Documentation: Example to show difference between Floyd-Steinberg and our approach
+- Documentation: Update example images with new brute-force decomposer approach
 - Documentation: Explain difference between noise sources (e.g. white, blue, bayer, interleaved gradient)
 - Documentation: Explain decomposition methods
 - Documentation: Explain how most colors have at least 3 possible decompositions with 4 colors, and infinite possibilities with 4+ colors.
-- Code: Implement Bayer & Interleaved Gradient noise sources
-- Code: Automatically find opposite colors for octahedrons
-- Code: Automatically order colors cyclically around poles for octahedrons
+- Code: Implement Floyd-Steinberg (and other error diffusion) using the decomposed colors
+- Code: Implement palette options (both dither and output palette)
+- Code: Allow Floyd-Steinberg on RGB or decomposed (e.g. have dither-rgb and dither-decompose)
+- Code: Put "alloc" behind a feature, such that DecomposeBruteforce is disabled (as it needs Vec)
