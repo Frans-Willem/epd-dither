@@ -1,5 +1,5 @@
-use epd_dither::decomposer_bruteforce::{DecomposerBruteforce, DecomposerBruteforceStrategy};
-use epd_dither::decomposer6c::{Decomposer6C, Decomposer6CAxisStrategy};
+use epd_dither::decompose::naive::{NaiveDecomposer, NaiveDecomposerStrategy};
+use epd_dither::decompose::octahedron::{OctahedronDecomposer, OctahedronDecomposerAxisStrategy};
 use image::{DynamicImage, ImageBuffer, ImageReader, Luma, Rgb};
 use nalgebra::geometry::Point3;
 use nalgebra::{DVector, Vector6};
@@ -74,8 +74,8 @@ impl std::str::FromStr for NoiseSource {
 enum DecomposeStrategy {
     OctahedronClosest,
     OctahedronFurthest,
-    BruteforceMix,
-    BruteforceDominant,
+    NaiveMix,
+    NaiveDominant,
 }
 
 #[derive(Parser)]
@@ -179,26 +179,28 @@ fn main() {
     let palette_as_points = palette_f32.map(color_to_point);
     let decompose: Box<dyn Fn(Point3<f32>) -> DVector<f32>> = match args.strategy {
         DecomposeStrategy::OctahedronClosest => {
-            let decomposer = Decomposer6C::new(&palette_as_points).unwrap();
-            Box::new(move |x| {
-                owned_to_dynamic_vector(decomposer.decompose(&x, Decomposer6CAxisStrategy::Closest))
-            })
-        }
-        DecomposeStrategy::OctahedronFurthest => {
-            let decomposer = Decomposer6C::new(&palette_as_points).unwrap();
+            let decomposer = OctahedronDecomposer::new(&palette_as_points).unwrap();
             Box::new(move |x| {
                 owned_to_dynamic_vector(
-                    decomposer.decompose(&x, Decomposer6CAxisStrategy::Furthest),
+                    decomposer.decompose(&x, OctahedronDecomposerAxisStrategy::Closest),
                 )
             })
         }
-        DecomposeStrategy::BruteforceMix => {
-            let decomposer = DecomposerBruteforce::new(&palette_as_points).unwrap();
-            Box::new(move |x| decomposer.decompose(&x, DecomposerBruteforceStrategy::FavorMix))
+        DecomposeStrategy::OctahedronFurthest => {
+            let decomposer = OctahedronDecomposer::new(&palette_as_points).unwrap();
+            Box::new(move |x| {
+                owned_to_dynamic_vector(
+                    decomposer.decompose(&x, OctahedronDecomposerAxisStrategy::Furthest),
+                )
+            })
         }
-        DecomposeStrategy::BruteforceDominant => {
-            let decomposer = DecomposerBruteforce::new(&palette_as_points).unwrap();
-            Box::new(move |x| decomposer.decompose(&x, DecomposerBruteforceStrategy::FavorDominant))
+        DecomposeStrategy::NaiveMix => {
+            let decomposer = NaiveDecomposer::new(&palette_as_points).unwrap();
+            Box::new(move |x| decomposer.decompose(&x, NaiveDecomposerStrategy::FavorMix))
+        }
+        DecomposeStrategy::NaiveDominant => {
+            let decomposer = NaiveDecomposer::new(&palette_as_points).unwrap();
+            Box::new(move |x| decomposer.decompose(&x, NaiveDecomposerStrategy::FavorDominant))
         }
     };
 

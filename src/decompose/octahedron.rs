@@ -5,6 +5,11 @@ use nalgebra::{ClosedAddAssign, ClosedDivAssign, ClosedMulAssign, ClosedSubAssig
 use num_traits::identities::{One, Zero};
 use num_traits::one;
 
+/**
+ * This decomposer can be used if the points (colors) form a regular convex octahedron.
+ * On a single core of an ESP32-S3 it can decompose an 800x480 f32 image in under 5 seconds.
+ */
+
 struct LineDistanceCalculator<T: Scalar + ComplexField> {
     // P = origin + t * direction
     origin: Point3<T>,
@@ -38,7 +43,7 @@ where
     }
 }
 
-struct Decomposer6CAxis<T: Scalar + ComplexField> {
+struct OctahedronDecomposerAxis<T: Scalar + ComplexField> {
     // Which two poles are used as central axis
     poles: [usize; 2],
     // Calculator for distance to axis central line
@@ -49,20 +54,20 @@ struct Decomposer6CAxis<T: Scalar + ComplexField> {
     color_to_vertex_index: [usize; 6],
 }
 
-pub struct Decomposer6C<T: Scalar + ComplexField> {
+pub struct OctahedronDecomposer<T: Scalar + ComplexField> {
     // Possible axis to use in decomposition
-    axis: [Decomposer6CAxis<T>; 3],
+    axis: [OctahedronDecomposerAxis<T>; 3],
 }
 
 #[derive(Copy, Clone, Debug)]
-pub enum Decomposer6CAxisStrategy {
+pub enum OctahedronDecomposerAxisStrategy {
     Axis(usize),
     Closest,
     Furthest,
     Average,
 }
 
-impl<T: Scalar> Decomposer6CAxis<T>
+impl<T: Scalar> OctahedronDecomposerAxis<T>
 where
     T: ComplexField
         + ClosedSubAssign
@@ -100,7 +105,7 @@ where
     }
 }
 
-impl<T: Scalar> Decomposer6C<T>
+impl<T: Scalar> OctahedronDecomposer<T>
 where
     T: ComplexField
         + ClosedSubAssign
@@ -113,7 +118,7 @@ where
 {
     pub fn new(colors: &[Point3<T>; 6]) -> Option<Self> {
         let opposite_map = OctahedronProjector::find_opposites(colors)?;
-        let axis: [Decomposer6CAxis<T>; 3] =
+        let axis: [OctahedronDecomposerAxis<T>; 3] =
             crate::helpers::opt_array_transpose(core::array::from_fn(|axis_index| {
                 let vertex_index_to_color: [usize; 6] = [
                     opposite_map[axis_index % opposite_map.len()].0,
@@ -123,7 +128,7 @@ where
                     opposite_map[(axis_index + 1) % opposite_map.len()].1,
                     opposite_map[(axis_index + 2) % opposite_map.len()].1,
                 ];
-                Decomposer6CAxis::new(vertex_index_to_color, colors)
+                OctahedronDecomposerAxis::new(vertex_index_to_color, colors)
             }))?;
         Some(Self { axis })
     }
@@ -138,14 +143,18 @@ where
         })
     }
 
-    pub fn decompose(&self, color: &Point3<T>, strategy: Decomposer6CAxisStrategy) -> Vector6<T> {
+    pub fn decompose(
+        &self,
+        color: &Point3<T>,
+        strategy: OctahedronDecomposerAxisStrategy,
+    ) -> Vector6<T> {
         match strategy {
-            Decomposer6CAxisStrategy::Axis(axis) => {
+            OctahedronDecomposerAxisStrategy::Axis(axis) => {
                 let axis = &self.axis[axis % self.axis.len()];
                 let (barycentric, _) = axis.project(color);
                 barycentric
             }
-            Decomposer6CAxisStrategy::Average => {
+            OctahedronDecomposerAxisStrategy::Average => {
                 let axis = &self.axis[0];
                 let (mut barycentric_global, is_inside) = axis.project(color);
                 if is_inside {
@@ -159,7 +168,7 @@ where
                 }
                 barycentric_global
             }
-            Decomposer6CAxisStrategy::Closest => {
+            OctahedronDecomposerAxisStrategy::Closest => {
                 let (axis, _) = self
                     .axis
                     .iter()
@@ -168,7 +177,7 @@ where
                     .unwrap_or((&self.axis[0], num_traits::zero()));
                 axis.project(color).0
             }
-            Decomposer6CAxisStrategy::Furthest => {
+            OctahedronDecomposerAxisStrategy::Furthest => {
                 let (axis, _) = self
                     .axis
                     .iter()

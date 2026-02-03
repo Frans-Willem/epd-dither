@@ -3,7 +3,7 @@ use crate::barycentric::tetrahedron::TetrahedronProjector;
 use crate::barycentric::triangle::TriangleProjector;
 use alloc::vec::Vec;
 use itertools::Itertools;
-use nalgebra::base::{DVector, OVector, Scalar};
+use nalgebra::base::{DVector, OVector, Scalar, Vector4};
 use nalgebra::geometry::Point3;
 use nalgebra::{
     ClosedAddAssign, ClosedDivAssign, ClosedMulAssign, ClosedSubAssign, ComplexField, Const,
@@ -12,19 +12,19 @@ use num_traits::identities::{One, Zero};
 use num_traits::zero;
 
 #[derive(Debug, Clone)]
-pub enum DecomposerBruteforceStrategy {
+pub enum NaiveDecomposerStrategy {
     FavorMix,
     FavorDominant,
 }
 
-pub struct DecomposerBruteforce<T: Scalar + ComplexField> {
+pub struct NaiveDecomposer<T: Scalar + ComplexField> {
     num_colors: usize,
     tetras: Vec<(TetrahedronProjector<T>, [usize; 4])>,
     faces: Vec<(TriangleProjector<T>, [usize; 3])>,
     edges: Vec<(LineProjector<T>, [usize; 2])>,
 }
 
-impl<T: Scalar> DecomposerBruteforce<T>
+impl<T: Scalar> NaiveDecomposer<T>
 where
     T: ComplexField
         + ClosedSubAssign
@@ -90,7 +90,21 @@ where
         global_barycentric
     }
 
-    pub fn decompose(&self, pt: &Point3<T>, strategy: DecomposerBruteforceStrategy) -> DVector<T> {
+    fn compare_tetra_projection_favor_mix<'t>(
+        a: (Vector4<T>, &'t [usize; 4]),
+        b: (Vector4<T>, &'t [usize; 4]),
+    ) -> (Vector4<T>, &'t [usize; 4]) {
+        if b.0.max() < a.0.max() { b } else { a }
+    }
+
+    fn compare_tetra_projection_favor_dominant<'t>(
+        a: (Vector4<T>, &'t [usize; 4]),
+        b: (Vector4<T>, &'t [usize; 4]),
+    ) -> (Vector4<T>, &'t [usize; 4]) {
+        if b.0.max() > a.0.max() { b } else { a }
+    }
+
+    pub fn decompose(&self, pt: &Point3<T>, strategy: NaiveDecomposerStrategy) -> DVector<T> {
         let in_tetras = self.tetras.iter().filter_map(|(tetra, vertex_indices)| {
             let projected = tetra.project(pt);
             if projected.min() < zero() {
@@ -99,14 +113,10 @@ where
                 Some((projected, vertex_indices))
             }
         });
-        let in_tetras = match strategy {
-            DecomposerBruteforceStrategy::FavorMix => {
-                in_tetras.reduce(|a, b| if b.0.max() < a.0.max() { b } else { a })
-            }
-            DecomposerBruteforceStrategy::FavorDominant => {
-                in_tetras.reduce(|a, b| if b.0.max() > a.0.max() { b } else { a })
-            }
-        };
+        let in_tetras = in_tetras.reduce(match strategy {
+            NaiveDecomposerStrategy::FavorMix => Self::compare_tetra_projection_favor_mix,
+            NaiveDecomposerStrategy::FavorDominant => Self::compare_tetra_projection_favor_dominant,
+        });
         if let Some((local_barycentric, vertex_indices)) = in_tetras {
             return self.to_global_barycentric_coordinates(local_barycentric, vertex_indices);
         }
