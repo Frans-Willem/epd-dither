@@ -3,5 +3,6 @@
 extern crate alloc; // TODO: Can we put this behind a feature?
 pub mod barycentric;
 pub mod decompose;
+pub mod dither;
 mod helpers;
 pub mod noise;

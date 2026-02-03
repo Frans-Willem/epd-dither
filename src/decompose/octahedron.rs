@@ -116,7 +116,8 @@ where
         + One
         + PartialOrd,
 {
-    pub fn new(colors: &[Point3<T>; 6]) -> Option<Self> {
+    pub fn new(colors: &[Point3<T>]) -> Option<Self> {
+        let colors: &[Point3<T>; 6] = colors.try_into().ok()?;
         let opposite_map = OctahedronProjector::find_opposites(colors)?;
         let axis: [OctahedronDecomposerAxis<T>; 3] =
             crate::helpers::opt_array_transpose(core::array::from_fn(|axis_index| {

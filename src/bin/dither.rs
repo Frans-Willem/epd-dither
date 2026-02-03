@@ -1,15 +1,15 @@
+use clap::{Parser, ValueEnum};
 use epd_dither::decompose::naive::{NaiveDecomposer, NaiveDecomposerStrategy};
 use epd_dither::decompose::octahedron::{OctahedronDecomposer, OctahedronDecomposerAxisStrategy};
 use image::{DynamicImage, ImageBuffer, ImageReader, Luma, Rgb};
+use nalgebra::DVector;
 use nalgebra::geometry::Point3;
-use nalgebra::{DVector, Vector6};
-
-use clap::{Parser, ValueEnum};
 use rand::distr::StandardUniform;
 use rand::prelude::*;
 
 #[derive(Clone, Debug)]
 enum NoiseSource {
+    None,
     Bayer(Option<usize>),
     InterleavedGradient,
     White,
@@ -20,6 +20,7 @@ impl NoiseSource {
     const LONG_HELP: &'static str = concat!(
         "Noise source to use.\n\n",
         "Accepted values:\n",
+        " none No noise\n",
         " bayer:<N> Bayer matrix of size 2**N (usize)\n",
         " bayer Infinite Bayer pattern\n",
         " ign Interleaved Gradient Noise\n",
@@ -38,6 +39,7 @@ impl std::str::FromStr for NoiseSource {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
+            "none" => Ok(NoiseSource::None),
             "bayer" => Ok(NoiseSource::Bayer(None)),
 
             "ign" | "interleaved-gradient-noise" => Ok(NoiseSource::InterleavedGradient),
@@ -78,6 +80,22 @@ enum DecomposeStrategy {
     NaiveDominant,
 }
 
+#[derive(Clone, Debug, ValueEnum)]
+enum DiffuseMethod {
+    None,
+    FloydSteinberg,
+    JarvisJudiceAndNinke,
+    Atkinson,
+    Sierra,
+}
+
+#[derive(Clone, Debug, ValueEnum)]
+enum Palette {
+    Naive,
+    Spectra6,
+    Epdoptimize,
+}
+
 #[derive(Parser)]
 #[command(name = "dither")]
 struct Args {
@@ -89,43 +107,45 @@ struct Args {
     noise: NoiseSource,
     #[arg(long, value_name = "STRATEGY", default_value = "octahedron-closest")]
     strategy: DecomposeStrategy,
+    #[arg(long, value_name = "DIFFUSE", default_value = "floyd-steinberg")]
+    diffuse: DiffuseMethod,
+    #[arg(long, value_name = "DITHER_PALETTE", default_value = "spectra6")]
+    dither_palette: Palette,
+    #[arg(long, value_name = "OUTPUT_PALETTE", default_value = "spectra6")]
+    output_palette: Palette,
 }
 
-#[allow(dead_code)]
-const PALETTE_MINE: [Rgb<f32>; 6] = [
-    Rgb([
-        0.226_762_65,
-        0.0, //-0.0055970314385675474,
-        0.259_709_48,
-    ]),
-    Rgb([0.700_009_5, 0.816_166_4, 0.786_138_5]),
-    Rgb([0.239_182_67, 0.148_258_42, 0.596_627_6]),
-    Rgb([0.378_047_26, 0.408_988_65, 0.338_833_5]),
-    Rgb([0.590_308_67, 0.147_103_09, 0.172_003_87]),
-    Rgb([
-        0.841_725_77,
-        0.912_686_1,
-        0.0, //-0.053016650312371474,
-    ]),
-];
-
-const PALETTE_EPDOPTIMIZE: [Rgb<u8>; 6] = [
-    Rgb([0x19, 0x1E, 0x21]),
-    Rgb([0xe8, 0xe8, 0xe8]),
-    Rgb([0x21, 0x57, 0xba]),
-    Rgb([0x12, 0x5f, 0x20]),
-    Rgb([0xb2, 0x13, 0x18]),
-    Rgb([0xef, 0xde, 0x44]),
-];
-
-const PALETTE_MEASURED: [Rgb<u8>; 6] = [
-    Rgb([179, 208, 200]),
-    Rgb([61, 38, 152]),
-    Rgb([96, 104, 86]),
-    Rgb([151, 38, 44]),
-    Rgb([215, 233, 0]),
-    Rgb([58, 0, 66]),
-];
+impl Palette {
+    fn as_slice(&self) -> &[Rgb<u8>] {
+        /* Ordering as in the reterminal e1002 driver */
+        match self {
+            Palette::Naive => &[
+                Rgb([0, 0, 0]),       // Black
+                Rgb([255, 255, 255]), // White
+                Rgb([255, 255, 0]),   // Yellow
+                Rgb([255, 0, 0]),     // Red
+                Rgb([0, 0, 255]),     // Blue
+                Rgb([0, 255, 0]),     // Green
+            ],
+            Palette::Spectra6 => &[
+                Rgb([58, 0, 66]),     // Black
+                Rgb([179, 208, 200]), // White
+                Rgb([215, 233, 0]),   // Yellow
+                Rgb([151, 38, 44]),   // Red
+                Rgb([61, 38, 152]),   // Blue
+                Rgb([96, 104, 86]),   // Green
+            ],
+            Palette::Epdoptimize => &[
+                Rgb([0x19, 0x1E, 0x21]), // Black
+                Rgb([0xe8, 0xe8, 0xe8]), // White
+                Rgb([0xef, 0xde, 0x44]), // Yellow
+                Rgb([0xb2, 0x13, 0x18]), // Red
+                Rgb([0x21, 0x57, 0xba]), // Blue
+                Rgb([0x12, 0x5f, 0x20]), // Green
+            ],
+        }
+    }
+}
 
 #[allow(dead_code)]
 enum SpectraColors {
@@ -143,21 +163,125 @@ fn color_to_point(color: Rgb<f32>) -> Point3<f32> {
     Point3::new(r, g, b)
 }
 
-// TODO: Move to library
-fn pick_from_barycentric_weights(weights: DVector<f32>, offset: f32) -> usize {
-    let mut index = 0;
-    let mut offset = offset;
-    while index + 1 < 6 && weights[index] <= offset {
-        offset -= weights[index];
-        index += 1;
-    }
-    index
-}
-
 fn owned_to_dynamic_vector<T: nalgebra::Scalar, const N: usize>(
     vec: nalgebra::SVector<T, N>,
 ) -> DVector<T> {
     DVector::from_column_slice(vec.as_slice())
+}
+
+struct InPlaceDitheringWithNoise<I: image::GenericImage, F: Fn(usize, usize) -> Option<f32>> {
+    image: I,
+    noise_fn: F,
+}
+
+impl<I: image::GenericImage, F: Fn(usize, usize) -> Option<f32>>
+    epd_dither::dither::diffuse::ImageSize for InPlaceDitheringWithNoise<I, F>
+{
+    fn width(&self) -> usize {
+        self.image.width() as usize
+    }
+    fn height(&self) -> usize {
+        self.image.height() as usize
+    }
+}
+
+impl<I: image::GenericImage, F: Fn(usize, usize) -> Option<f32>>
+    epd_dither::dither::diffuse::ImageReader<(I::Pixel, Option<f32>)>
+    for InPlaceDitheringWithNoise<I, F>
+{
+    fn get_pixel(&self, x: usize, y: usize) -> (I::Pixel, Option<f32>) {
+        (
+            self.image.get_pixel(x as u32, y as u32),
+            (self.noise_fn)(x, y),
+        )
+    }
+}
+
+impl<I: image::GenericImage, F: Fn(usize, usize) -> Option<f32>>
+    epd_dither::dither::diffuse::ImageWriter<I::Pixel> for InPlaceDitheringWithNoise<I, F>
+{
+    fn put_pixel(&mut self, x: usize, y: usize, pixel: I::Pixel) {
+        self.image.put_pixel(x as u32, y as u32, pixel)
+    }
+}
+
+struct DecomposingDitherStrategy {
+    decompose_fn: Box<dyn Fn(Point3<f32>) -> DVector<f32>>,
+    palette: Vec<Rgb<f32>>,
+}
+
+#[derive(Clone)]
+struct DecomposedQuantizationError(Option<DVector<f32>>);
+
+impl Default for DecomposedQuantizationError {
+    fn default() -> Self {
+        Self(None)
+    }
+}
+
+impl core::ops::Mul<usize> for DecomposedQuantizationError {
+    type Output = Self;
+    fn mul(self: Self, rhs: usize) -> Self {
+        Self(self.0.map(|x| x * (rhs as f32)))
+    }
+}
+
+impl core::ops::Div<usize> for DecomposedQuantizationError {
+    type Output = Self;
+    fn div(self: Self, rhs: usize) -> Self {
+        Self(self.0.map(|x| x / (rhs as f32)))
+    }
+}
+
+impl core::ops::AddAssign<DecomposedQuantizationError> for DecomposedQuantizationError {
+    fn add_assign(&mut self, rhs: Self) {
+        self.0 = match (core::mem::take(&mut self.0), rhs.0) {
+            (a, None) => a,
+            (None, b) => b,
+            (Some(a), Some(b)) => Some(a + b),
+        }
+    }
+}
+
+impl epd_dither::dither::diffuse::PixelStrategy for DecomposingDitherStrategy {
+    type Source = (Rgb<f32>, Option<f32>); // Take both a pixel and an optional noise
+    type Target = Rgb<f32>;
+    type QuantizationError = DecomposedQuantizationError;
+
+    fn quantize(
+        &self,
+        source: Self::Source,
+        error: Self::QuantizationError,
+    ) -> (Self::Target, Self::QuantizationError) {
+        let (source, noise) = source;
+        let decomposed = (self.decompose_fn)(color_to_point(source));
+        let decomposed = match error.0 {
+            None => decomposed,
+            Some(error) => decomposed + error,
+        };
+        let decomposed_clipped = decomposed.map(|x| if x < 0.0 { 0.0 } else { x });
+        let decomposed_clipped_sum = decomposed_clipped.sum();
+        let index = if let Some(noise) = noise
+            && decomposed_clipped_sum > 0.0
+        {
+            let mut noise = noise * decomposed_clipped_sum;
+            let mut index: usize = 0;
+            while index + 1 < decomposed_clipped.nrows() && noise >= decomposed_clipped[index] {
+                noise -= decomposed_clipped[index];
+                index += 1;
+            }
+            index
+        } else {
+            decomposed.argmax().0
+        };
+        // Turn decomposed into
+        let mut error = decomposed;
+        error[index] -= 1.0;
+        (
+            self.palette[index].clone(),
+            DecomposedQuantizationError(Some(error)),
+        )
+    }
 }
 
 fn main() {
@@ -169,17 +293,20 @@ fn main() {
         .unwrap()
         .into_rgb32f();
     println!("Opened image");
-    println!("Palette used:");
     // TODO: Allow dither and output palette to be specified
-    let palette_u8 = PALETTE_EPDOPTIMIZE;
-    for color in palette_u8 {
+    let dither_palette_u8 = args.dither_palette.as_slice();
+    println!("Dither palette used:");
+    for color in dither_palette_u8 {
         println!("  #{:02X}{:02X}{:02X},", color.0[0], color.0[1], color.0[2]);
     }
-    let palette_f32 = palette_u8.map(|c| Rgb(c.0.map(|x| (x as f32) / 255.0)));
-    let palette_as_points = palette_f32.map(color_to_point);
+    let dither_palette_f32 = dither_palette_u8
+        .iter()
+        .map(|c| Rgb(c.0.map(|x| (x as f32) / 255.0)));
+    let dither_palette_as_points: Vec<Point3<f32>> =
+        dither_palette_f32.map(color_to_point).collect();
     let decompose: Box<dyn Fn(Point3<f32>) -> DVector<f32>> = match args.strategy {
         DecomposeStrategy::OctahedronClosest => {
-            let decomposer = OctahedronDecomposer::new(&palette_as_points).unwrap();
+            let decomposer = OctahedronDecomposer::new(&dither_palette_as_points).unwrap();
             Box::new(move |x| {
                 owned_to_dynamic_vector(
                     decomposer.decompose(&x, OctahedronDecomposerAxisStrategy::Closest),
@@ -187,7 +314,7 @@ fn main() {
             })
         }
         DecomposeStrategy::OctahedronFurthest => {
-            let decomposer = OctahedronDecomposer::new(&palette_as_points).unwrap();
+            let decomposer = OctahedronDecomposer::new(&dither_palette_as_points).unwrap();
             Box::new(move |x| {
                 owned_to_dynamic_vector(
                     decomposer.decompose(&x, OctahedronDecomposerAxisStrategy::Furthest),
@@ -195,39 +322,59 @@ fn main() {
             })
         }
         DecomposeStrategy::NaiveMix => {
-            let decomposer = NaiveDecomposer::new(&palette_as_points).unwrap();
+            let decomposer = NaiveDecomposer::new(dither_palette_as_points.as_slice()).unwrap();
             Box::new(move |x| decomposer.decompose(&x, NaiveDecomposerStrategy::FavorMix))
         }
         DecomposeStrategy::NaiveDominant => {
-            let decomposer = NaiveDecomposer::new(&palette_as_points).unwrap();
+            let decomposer = NaiveDecomposer::new(dither_palette_as_points.as_slice()).unwrap();
             Box::new(move |x| decomposer.decompose(&x, NaiveDecomposerStrategy::FavorDominant))
         }
     };
 
-    let mut input = input;
-    println!("Iterating over pixels");
-    for (x, y, pixel) in input.enumerate_pixels_mut() {
-        let value: Rgb<f32> = *pixel;
+    let noise_fn = |x, y| match args.noise {
+        NoiseSource::Bayer(Some(max_depth)) => Some(epd_dither::noise::bayer(x, y, max_depth)),
+        NoiseSource::Bayer(None) => Some(epd_dither::noise::bayer_inf(x, y)),
+        NoiseSource::InterleavedGradient => Some(epd_dither::noise::interleaved_gradient_noise(
+            x as f32, y as f32,
+        )),
+        NoiseSource::White => Some(rand::rng().sample(StandardUniform)),
+        NoiseSource::File(ref f) => {
+            Some(f.get_pixel(x as u32 % f.width(), y as u32 % f.height()).0[0].clone())
+        }
+        NoiseSource::None => None,
+    };
 
-        let value = color_to_point(value);
-        let barycentric: DVector<f32> = decompose(value);
-        let noise = match args.noise {
-            NoiseSource::Bayer(Some(max_depth)) => {
-                epd_dither::noise::bayer(x as usize, y as usize, max_depth)
-            }
-            NoiseSource::Bayer(None) => epd_dither::noise::bayer_inf(x as usize, y as usize),
-            NoiseSource::InterleavedGradient => {
-                epd_dither::noise::interleaved_gradient_noise(x as f32, y as f32)
-            }
-            NoiseSource::White => rand::rng().sample(StandardUniform),
-            NoiseSource::File(ref f) => {
-                f.get_pixel(x as u32 % f.width(), y as u32 % f.height()).0[0].clone()
-            }
-        };
-        let index = pick_from_barycentric_weights(barycentric, noise);
-        let value = palette_f32[index];
-        *pixel = value;
-    }
+    let mut inout = InPlaceDitheringWithNoise {
+        image: input,
+        noise_fn,
+    };
+    let matrix: Box<dyn epd_dither::dither::diffusion_matrix::DiffusionMatrix> = match args.diffuse
+    {
+        DiffuseMethod::None => Box::new(epd_dither::dither::diffusion_matrix::NoDiffuse),
+        DiffuseMethod::Atkinson => Box::new(epd_dither::dither::diffusion_matrix::Atkinson),
+        DiffuseMethod::FloydSteinberg => {
+            Box::new(epd_dither::dither::diffusion_matrix::FloydSteinberg)
+        }
+        DiffuseMethod::JarvisJudiceAndNinke => {
+            Box::new(epd_dither::dither::diffusion_matrix::JarvisJudiceAndNinke)
+        }
+        DiffuseMethod::Sierra => Box::new(epd_dither::dither::diffusion_matrix::Sierra),
+    };
+    epd_dither::dither::diffuse::diffuse_dither(
+        DecomposingDitherStrategy {
+            decompose_fn: decompose,
+            palette: args
+                .output_palette
+                .as_slice()
+                .iter()
+                .map(|c| Rgb(c.0.map(|x| (x as f32) / 255.0)))
+                .collect(),
+        },
+        matrix,
+        &mut inout,
+        true,
+    );
+    let input = inout.image;
     println!("Converting back to U8");
     let input: DynamicImage = input.into();
     let input = input.into_rgb8();
