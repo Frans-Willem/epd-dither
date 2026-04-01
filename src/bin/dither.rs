@@ -89,6 +89,24 @@ enum DiffuseMethod {
     Sierra,
 }
 
+impl DiffuseMethod {
+    pub fn to_boxed_matrix(
+        &self,
+    ) -> Box<dyn epd_dither::dither::diffusion_matrix::DiffusionMatrix> {
+        match self {
+            DiffuseMethod::None => Box::new(epd_dither::dither::diffusion_matrix::NoDiffuse),
+            DiffuseMethod::Atkinson => Box::new(epd_dither::dither::diffusion_matrix::Atkinson),
+            DiffuseMethod::FloydSteinberg => {
+                Box::new(epd_dither::dither::diffusion_matrix::FloydSteinberg)
+            }
+            DiffuseMethod::JarvisJudiceAndNinke => {
+                Box::new(epd_dither::dither::diffusion_matrix::JarvisJudiceAndNinke)
+            }
+            DiffuseMethod::Sierra => Box::new(epd_dither::dither::diffusion_matrix::Sierra),
+        }
+    }
+}
+
 #[derive(Clone, Debug, ValueEnum)]
 enum Palette {
     Naive,
@@ -172,6 +190,7 @@ fn owned_to_dynamic_vector<T: nalgebra::Scalar, const N: usize>(
 struct InPlaceDitheringWithNoise<I: image::GenericImage, F: Fn(usize, usize) -> Option<f32>> {
     image: I,
     noise_fn: F,
+    palette: Vec<I::Pixel>,
 }
 
 impl<I: image::GenericImage, F: Fn(usize, usize) -> Option<f32>>
@@ -198,10 +217,10 @@ impl<I: image::GenericImage, F: Fn(usize, usize) -> Option<f32>>
 }
 
 impl<I: image::GenericImage, F: Fn(usize, usize) -> Option<f32>>
-    epd_dither::dither::diffuse::ImageWriter<I::Pixel> for InPlaceDitheringWithNoise<I, F>
+    epd_dither::dither::diffuse::ImageWriter<usize> for InPlaceDitheringWithNoise<I, F>
 {
-    fn put_pixel(&mut self, x: usize, y: usize, pixel: I::Pixel) {
-        self.image.put_pixel(x as u32, y as u32, pixel)
+    fn put_pixel(&mut self, x: usize, y: usize, pixel: usize) {
+        self.image.put_pixel(x as u32, y as u32, self.palette[pixel])
     }
 }
 
@@ -245,7 +264,7 @@ impl core::ops::AddAssign<DecomposedQuantizationError> for DecomposedQuantizatio
 
 impl epd_dither::dither::diffuse::PixelStrategy for DecomposingDitherStrategy {
     type Source = (Rgb<f32>, Option<f32>); // Take both a pixel and an optional noise
-    type Target = Rgb<f32>;
+    type Target = usize;
     type QuantizationError = DecomposedQuantizationError;
 
     fn quantize(
@@ -277,10 +296,7 @@ impl epd_dither::dither::diffuse::PixelStrategy for DecomposingDitherStrategy {
         // Turn decomposed into
         let mut error = decomposed;
         error[index] -= 1.0;
-        (
-            self.palette[index].clone(),
-            DecomposedQuantizationError(Some(error)),
-        )
+        (index, DecomposedQuantizationError(Some(error)))
     }
 }
 
@@ -347,18 +363,7 @@ fn main() {
     let mut inout = InPlaceDitheringWithNoise {
         image: input,
         noise_fn,
-    };
-    let matrix: Box<dyn epd_dither::dither::diffusion_matrix::DiffusionMatrix> = match args.diffuse
-    {
-        DiffuseMethod::None => Box::new(epd_dither::dither::diffusion_matrix::NoDiffuse),
-        DiffuseMethod::Atkinson => Box::new(epd_dither::dither::diffusion_matrix::Atkinson),
-        DiffuseMethod::FloydSteinberg => {
-            Box::new(epd_dither::dither::diffusion_matrix::FloydSteinberg)
-        }
-        DiffuseMethod::JarvisJudiceAndNinke => {
-            Box::new(epd_dither::dither::diffusion_matrix::JarvisJudiceAndNinke)
-        }
-        DiffuseMethod::Sierra => Box::new(epd_dither::dither::diffusion_matrix::Sierra),
+        palette: args.dither_palette.as_slice().iter().map(|c| Rgb(c.0.map(|x| (x as f32) / 255.0))).collect(),
     };
     epd_dither::dither::diffuse::diffuse_dither(
         DecomposingDitherStrategy {
@@ -370,7 +375,7 @@ fn main() {
                 .map(|c| Rgb(c.0.map(|x| (x as f32) / 255.0)))
                 .collect(),
         },
-        matrix,
+        args.diffuse.to_boxed_matrix(),
         &mut inout,
         true,
     );
