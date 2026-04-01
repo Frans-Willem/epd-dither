@@ -224,9 +224,46 @@ impl<I: image::GenericImage, F: Fn(usize, usize) -> Option<f32>>
     }
 }
 
+struct PaletteDitheringWithNoise<I: image::GenericImage, F: Fn(usize, usize) -> Option<f32>> {
+    image: I,
+    noise_fn: F,
+    target: Vec<usize>,
+}
+
+impl<I: image::GenericImage, F: Fn(usize, usize) -> Option<f32>>
+    epd_dither::dither::diffuse::ImageSize for PaletteDitheringWithNoise<I, F>
+{
+    fn width(&self) -> usize {
+        self.image.width() as usize
+    }
+    fn height(&self) -> usize {
+        self.image.height() as usize
+    }
+}
+
+impl<I: image::GenericImage, F: Fn(usize, usize) -> Option<f32>>
+    epd_dither::dither::diffuse::ImageReader<(I::Pixel, Option<f32>)>
+    for PaletteDitheringWithNoise<I, F>
+{
+    fn get_pixel(&self, x: usize, y: usize) -> (I::Pixel, Option<f32>) {
+        (
+            self.image.get_pixel(x as u32, y as u32),
+            (self.noise_fn)(x, y),
+        )
+    }
+}
+
+impl<I: image::GenericImage, F: Fn(usize, usize) -> Option<f32>>
+    epd_dither::dither::diffuse::ImageWriter<usize> for PaletteDitheringWithNoise<I, F>
+{
+    fn put_pixel(&mut self, x: usize, y: usize, pixel: usize) {
+        self.target.resize(self.image.width() as usize * self.image.height() as usize, 0);
+        self.target[(y * self.image.width() as usize) + x] = pixel;
+    }
+}
+
 struct DecomposingDitherStrategy {
     decompose_fn: Box<dyn Fn(Point3<f32>) -> DVector<f32>>,
-    palette: Vec<Rgb<f32>>,
 }
 
 #[derive(Clone)]
@@ -360,20 +397,14 @@ fn main() {
         NoiseSource::None => None,
     };
 
-    let mut inout = InPlaceDitheringWithNoise {
+    let mut inout = PaletteDitheringWithNoise {
         image: input,
         noise_fn,
-        palette: args.dither_palette.as_slice().iter().map(|c| Rgb(c.0.map(|x| (x as f32) / 255.0))).collect(),
+        target: Vec::new(),
     };
     epd_dither::dither::diffuse::diffuse_dither(
         DecomposingDitherStrategy {
             decompose_fn: decompose,
-            palette: args
-                .output_palette
-                .as_slice()
-                .iter()
-                .map(|c| Rgb(c.0.map(|x| (x as f32) / 255.0)))
-                .collect(),
         },
         args.diffuse.to_boxed_matrix(),
         &mut inout,
