@@ -20,3 +20,4 @@ nalgebra = { version = "0.34.1", default-features = false, features = ["libm","a
 num-traits = { version = "0.2.19", default-features = false }
 tinyvec = { version = "1.10.0", default-features = false }
 itertools = { version = "0.14.0", default-features = false, features = ["use_alloc"] }
+png = "0.18.1"

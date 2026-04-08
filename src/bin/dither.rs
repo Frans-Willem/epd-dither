@@ -220,7 +220,8 @@ impl<I: image::GenericImage, F: Fn(usize, usize) -> Option<f32>>
     epd_dither::dither::diffuse::ImageWriter<usize> for InPlaceDitheringWithNoise<I, F>
 {
     fn put_pixel(&mut self, x: usize, y: usize, pixel: usize) {
-        self.image.put_pixel(x as u32, y as u32, self.palette[pixel])
+        self.image
+            .put_pixel(x as u32, y as u32, self.palette[pixel])
     }
 }
 
@@ -257,7 +258,10 @@ impl<I: image::GenericImage, F: Fn(usize, usize) -> Option<f32>>
     epd_dither::dither::diffuse::ImageWriter<usize> for PaletteDitheringWithNoise<I, F>
 {
     fn put_pixel(&mut self, x: usize, y: usize, pixel: usize) {
-        self.target.resize(self.image.width() as usize * self.image.height() as usize, 0);
+        self.target.resize(
+            self.image.width() as usize * self.image.height() as usize,
+            0,
+        );
         self.target[(y * self.image.width() as usize) + x] = pixel;
     }
 }
@@ -410,10 +414,17 @@ fn main() {
         &mut inout,
         true,
     );
-    let input = inout.image;
-    println!("Converting back to U8");
-    let input: DynamicImage = input.into();
-    let input = input.into_rgb8();
-    input.save(args.output_file).unwrap();
+    let mut output = png::Encoder::new(
+        std::io::BufWriter::new(std::fs::File::create(args.output_file).unwrap()),
+        inout.image.width(),
+        inout.image.height(),
+    );
+    output.set_color(png::ColorType::Indexed);
+    output.set_depth(png::BitDepth::Eight);
+    let palette : Vec<u8> = args.output_palette.as_slice().iter().flat_map(|rgb| rgb.0.iter()).map(|x| x.clone()).collect();
+    output.set_palette(palette);
+    let data : Vec<u8> = inout.target.iter().map(|x| *x as u8).collect();
+    let mut output = output.write_header().unwrap();
+    output.write_image_data(data.as_slice()).unwrap();
     println!("Done");
 }
