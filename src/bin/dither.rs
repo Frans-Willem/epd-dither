@@ -261,8 +261,8 @@ impl<I: image::GenericImage, F: Fn(usize, usize) -> Option<f32>>
     }
 }
 
-struct DecomposingDitherStrategy {
-    decompose_fn: Box<dyn Fn(Point3<f32>) -> DVector<f32>>,
+struct DecomposingDitherStrategy<D> {
+    decomposer: D,
 }
 
 #[derive(Clone)]
@@ -298,7 +298,10 @@ impl core::ops::AddAssign<DecomposedQuantizationError> for DecomposedQuantizatio
     }
 }
 
-impl epd_dither::dither::diffuse::PixelStrategy for DecomposingDitherStrategy {
+impl<D> epd_dither::dither::diffuse::PixelStrategy for DecomposingDitherStrategy<D>
+where
+    D: Decomposer<f32, Input = Point3<f32>>,
+{
     type Source = (Rgb<f32>, Option<f32>); // Take both a pixel and an optional noise
     type Target = usize;
     type QuantizationError = DecomposedQuantizationError;
@@ -309,7 +312,9 @@ impl epd_dither::dither::diffuse::PixelStrategy for DecomposingDitherStrategy {
         error: Self::QuantizationError,
     ) -> (Self::Target, Self::QuantizationError) {
         let (source, noise) = source;
-        let decomposed = (self.decompose_fn)(color_to_point(source));
+        let mut decomposed = DVector::zeros(self.decomposer.palette_size());
+        self.decomposer
+            .decompose_into(&color_to_point(source), decomposed.as_mut_slice());
         let decomposed = match error.0 {
             None => decomposed,
             Some(error) => decomposed + error,
@@ -356,53 +361,6 @@ fn main() {
         .map(|c| Rgb(c.0.map(|x| (x as f32) / 255.0)));
     let dither_palette_as_points: Vec<Point3<f32>> =
         dither_palette_f32.map(color_to_point).collect();
-    let decompose: Box<dyn Fn(Point3<f32>) -> DVector<f32>> = match args.strategy {
-        DecomposeStrategy::OctahedronClosest => {
-            let decomposer = OctahedronDecomposer::new(&dither_palette_as_points)
-                .unwrap()
-                .with_strategy(OctahedronDecomposerAxisStrategy::Closest);
-            let n = decomposer.palette_size();
-            Box::new(move |x| {
-                let mut v = DVector::zeros(n);
-                decomposer.decompose_into(&x, v.as_mut_slice());
-                v
-            })
-        }
-        DecomposeStrategy::OctahedronFurthest => {
-            let decomposer = OctahedronDecomposer::new(&dither_palette_as_points)
-                .unwrap()
-                .with_strategy(OctahedronDecomposerAxisStrategy::Furthest);
-            let n = decomposer.palette_size();
-            Box::new(move |x| {
-                let mut v = DVector::zeros(n);
-                decomposer.decompose_into(&x, v.as_mut_slice());
-                v
-            })
-        }
-        DecomposeStrategy::NaiveMix => {
-            let decomposer = NaiveDecomposer::new(dither_palette_as_points.as_slice())
-                .unwrap()
-                .with_strategy(NaiveDecomposerStrategy::FavorMix);
-            let n = decomposer.palette_size();
-            Box::new(move |x| {
-                let mut v = DVector::zeros(n);
-                decomposer.decompose_into(&x, v.as_mut_slice());
-                v
-            })
-        }
-        DecomposeStrategy::NaiveDominant => {
-            let decomposer = NaiveDecomposer::new(dither_palette_as_points.as_slice())
-                .unwrap()
-                .with_strategy(NaiveDecomposerStrategy::FavorDominant);
-            let n = decomposer.palette_size();
-            Box::new(move |x| {
-                let mut v = DVector::zeros(n);
-                decomposer.decompose_into(&x, v.as_mut_slice());
-                v
-            })
-        }
-    };
-
     let noise_fn = |x, y| match args.noise {
         NoiseSource::Bayer(Some(max_depth)) => Some(epd_dither::noise::bayer(x, y, max_depth)),
         NoiseSource::Bayer(None) => Some(epd_dither::noise::bayer_inf(x, y)),
@@ -421,14 +379,53 @@ fn main() {
         noise_fn,
         target: Vec::new(),
     };
-    epd_dither::dither::diffuse::diffuse_dither(
-        DecomposingDitherStrategy {
-            decompose_fn: decompose,
-        },
-        args.diffuse.to_boxed_matrix(),
-        &mut inout,
-        true,
-    );
+    let matrix = args.diffuse.to_boxed_matrix();
+    match args.strategy {
+        DecomposeStrategy::OctahedronClosest => {
+            let decomposer = OctahedronDecomposer::new(&dither_palette_as_points)
+                .unwrap()
+                .with_strategy(OctahedronDecomposerAxisStrategy::Closest);
+            epd_dither::dither::diffuse::diffuse_dither(
+                DecomposingDitherStrategy { decomposer },
+                matrix,
+                &mut inout,
+                true,
+            );
+        }
+        DecomposeStrategy::OctahedronFurthest => {
+            let decomposer = OctahedronDecomposer::new(&dither_palette_as_points)
+                .unwrap()
+                .with_strategy(OctahedronDecomposerAxisStrategy::Furthest);
+            epd_dither::dither::diffuse::diffuse_dither(
+                DecomposingDitherStrategy { decomposer },
+                matrix,
+                &mut inout,
+                true,
+            );
+        }
+        DecomposeStrategy::NaiveMix => {
+            let decomposer = NaiveDecomposer::new(dither_palette_as_points.as_slice())
+                .unwrap()
+                .with_strategy(NaiveDecomposerStrategy::FavorMix);
+            epd_dither::dither::diffuse::diffuse_dither(
+                DecomposingDitherStrategy { decomposer },
+                matrix,
+                &mut inout,
+                true,
+            );
+        }
+        DecomposeStrategy::NaiveDominant => {
+            let decomposer = NaiveDecomposer::new(dither_palette_as_points.as_slice())
+                .unwrap()
+                .with_strategy(NaiveDecomposerStrategy::FavorDominant);
+            epd_dither::dither::diffuse::diffuse_dither(
+                DecomposingDitherStrategy { decomposer },
+                matrix,
+                &mut inout,
+                true,
+            );
+        }
+    }
     let mut output = png::Encoder::new(
         std::io::BufWriter::new(std::fs::File::create(args.output_file).unwrap()),
         inout.image.width(),
