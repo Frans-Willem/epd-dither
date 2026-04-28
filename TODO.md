@@ -4,3 +4,11 @@
 - Documentation: Explain how most colors have at least 3 possible decompositions with 4 colors, and infinite possibilities with 4+ colors.
 - Code: Allow Floyd-Steinberg on RGB or decomposed (e.g. have dither-rgb and dither-decompose)
 - Code: Put "alloc" behind a feature, such that DecomposeBruteforce is disabled (as it needs Vec)
+- Code: Move DecomposingDitherStrategy + DecomposedQuantizationError from the binary into the library (already generic over D: Decomposer)
+- Code: Move the image-crate adapters (PaletteDitheringWithNoise) into the library, gated on an "image" feature
+- Code: Move Spectra6 / Epdoptimize palette constants from the binary into the library, next to OctahedronDecomposer
+- Code: Split "image" out of "with-binaries" so the library's image bindings can be used without pulling in the CLI dependencies
+- Code: Add a no-alloc N-channel NaiveDecomposerN<T, const MAX: usize> alongside the alloc-required NaiveDecomposer (deferred during initial Decomposer design until GrayDecomposer landed)
+- Code: Reuse the per-pixel weight buffer in DecomposingDitherStrategy::quantize via interior mutability instead of allocating a fresh DVector per pixel
+- Measurement: Recalibrate Spectra6 / Epdoptimize palette values with i1Pro readings once the unit arrives
+- Measurement: Replace the placeholder linearly-spaced Grayscale2/4/16 palettes with measured panel reflectance values
