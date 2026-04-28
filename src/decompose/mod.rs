@@ -1,3 +1,4 @@
+pub mod gray;
 pub mod naive;
 pub mod octahedron;
 

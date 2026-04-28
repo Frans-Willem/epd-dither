@@ -21,18 +21,34 @@ DITHER="target/release/dither"
 
 cargo build --release --bin dither >&2
 
-STRATEGIES=(octahedron-closest octahedron-furthest naive-mix naive-dominant)
 NOISES=(none bayer:8 bayer ign file:HDR_L_0.png)
 
-for strategy in "${STRATEGIES[@]}"; do
+run_dither() {
+    local strategy="$1"
+    local noise="$2"
+    shift 2
+    # Sanitize for filename: replace : / . with _
+    local slug_strat="${strategy//:/_}"
+    slug_strat="${slug_strat//./_}"
+    local slug_noise="${noise//:/_}"
+    slug_noise="${slug_noise//\//_}"
+    slug_noise="${slug_noise//./_}"
+    local out="$OUT_DIR/${slug_strat}__${slug_noise}.png"
+    echo "  $strategy / $noise -> $(basename "$out")" >&2
+    "$DITHER" --strategy "$strategy" --noise "$noise" "$@" "$INPUT" "$out"
+}
+
+# Spectra-6-target strategies (default palette = spectra6).
+for strategy in octahedron-closest octahedron-furthest naive-mix naive-dominant; do
     for noise in "${NOISES[@]}"; do
-        # Sanitize for filename: replace : / .  with _
-        slug="${noise//:/_}"
-        slug="${slug//\//_}"
-        slug="${slug//./_}"
-        out="$OUT_DIR/${strategy}__${slug}.png"
-        echo "  $strategy / $noise -> $(basename "$out")" >&2
-        "$DITHER" --strategy "$strategy" --noise "$noise" "$INPUT" "$out"
+        run_dither "$strategy" "$noise"
+    done
+done
+
+# Grayscale strategies need a grayscale palette; using grayscale4 here.
+for strategy in grayscale:0 grayscale:0.25 grayscale:0.5 grayscale:1; do
+    for noise in "${NOISES[@]}"; do
+        run_dither "$strategy" "$noise" --dither-palette grayscale4 --output-palette grayscale4
     done
 done
 

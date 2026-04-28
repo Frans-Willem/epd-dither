@@ -1,5 +1,6 @@
 use clap::{Parser, ValueEnum};
 use epd_dither::Decomposer;
+use epd_dither::decompose::gray::GrayDecomposer;
 use epd_dither::decompose::naive::{NaiveDecomposer, NaiveDecomposerStrategy};
 use epd_dither::decompose::octahedron::{OctahedronDecomposer, OctahedronDecomposerAxisStrategy};
 use image::{DynamicImage, ImageBuffer, ImageReader, Luma, Rgb};
@@ -73,12 +74,61 @@ impl std::str::FromStr for NoiseSource {
     }
 }
 
-#[derive(Clone, Debug, ValueEnum)]
+#[derive(Clone, Debug)]
 enum DecomposeStrategy {
     OctahedronClosest,
     OctahedronFurthest,
     NaiveMix,
     NaiveDominant,
+    /// 1-D / grayscale palette decomposition with the given spread ratio in [0, 1].
+    Grayscale(f32),
+}
+
+impl DecomposeStrategy {
+    const LONG_HELP: &'static str = concat!(
+        "Decomposition strategy.\n\n",
+        "Accepted values:\n",
+        " octahedron-closest      Octahedron, pick closest axis (default)\n",
+        " octahedron-furthest     Octahedron, pick furthest axis\n",
+        " naive-mix               Naive, favour mixed weights\n",
+        " naive-dominant          Naive, favour dominant component\n",
+        " grayscale               1-D grayscale, spread = 0.25 (gradient-friendly default)\n",
+        " grayscale:<spread>      1-D grayscale, spread in [0, 1]\n\n",
+        "Examples:\n",
+        " --strategy octahedron-closest\n",
+        " --strategy grayscale\n",
+        " --strategy grayscale:0.3\n",
+    );
+}
+
+impl std::str::FromStr for DecomposeStrategy {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "octahedron-closest" => Ok(Self::OctahedronClosest),
+            "octahedron-furthest" => Ok(Self::OctahedronFurthest),
+            "naive-mix" => Ok(Self::NaiveMix),
+            "naive-dominant" => Ok(Self::NaiveDominant),
+            "grayscale" => Ok(Self::Grayscale(0.25)),
+            _ if s.starts_with("grayscale:") => {
+                let v_str = &s["grayscale:".len()..];
+                let v = v_str.parse::<f32>().map_err(|_| {
+                    format!(
+                        "invalid value `{s}`: expected `grayscale:<spread>` with spread a number in [0, 1]"
+                    )
+                })?;
+                if !(0.0..=1.0).contains(&v) {
+                    return Err(format!("invalid spread `{v}`: must be in [0, 1]"));
+                }
+                Ok(Self::Grayscale(v))
+            }
+            _ => Err(format!(
+                "invalid value `{s}` for `--strategy`\n\n{}",
+                Self::LONG_HELP
+            )),
+        }
+    }
 }
 
 #[derive(Clone, Debug, ValueEnum)]
@@ -113,6 +163,9 @@ enum Palette {
     Naive,
     Spectra6,
     Epdoptimize,
+    Grayscale2,
+    Grayscale4,
+    Grayscale16,
 }
 
 #[derive(Parser)]
@@ -124,7 +177,7 @@ struct Args {
     output_file: String,
     #[arg(long, value_name="NOISE",long_help=NoiseSource::LONG_HELP,default_value = "ign")]
     noise: NoiseSource,
-    #[arg(long, value_name = "STRATEGY", default_value = "octahedron-closest")]
+    #[arg(long, value_name = "STRATEGY", long_help = DecomposeStrategy::LONG_HELP, default_value = "octahedron-closest")]
     strategy: DecomposeStrategy,
     #[arg(long, value_name = "DIFFUSE", default_value = "floyd-steinberg")]
     diffuse: DiffuseMethod,
@@ -162,6 +215,31 @@ impl Palette {
                 Rgb([0x21, 0x57, 0xba]), // Blue
                 Rgb([0x12, 0x5f, 0x20]), // Green
             ],
+            Palette::Grayscale2 => &[Rgb([0, 0, 0]), Rgb([255, 255, 255])],
+            Palette::Grayscale4 => &[
+                Rgb([0, 0, 0]),
+                Rgb([85, 85, 85]),
+                Rgb([170, 170, 170]),
+                Rgb([255, 255, 255]),
+            ],
+            Palette::Grayscale16 => &[
+                Rgb([0x00, 0x00, 0x00]),
+                Rgb([0x11, 0x11, 0x11]),
+                Rgb([0x22, 0x22, 0x22]),
+                Rgb([0x33, 0x33, 0x33]),
+                Rgb([0x44, 0x44, 0x44]),
+                Rgb([0x55, 0x55, 0x55]),
+                Rgb([0x66, 0x66, 0x66]),
+                Rgb([0x77, 0x77, 0x77]),
+                Rgb([0x88, 0x88, 0x88]),
+                Rgb([0x99, 0x99, 0x99]),
+                Rgb([0xAA, 0xAA, 0xAA]),
+                Rgb([0xBB, 0xBB, 0xBB]),
+                Rgb([0xCC, 0xCC, 0xCC]),
+                Rgb([0xDD, 0xDD, 0xDD]),
+                Rgb([0xEE, 0xEE, 0xEE]),
+                Rgb([0xFF, 0xFF, 0xFF]),
+            ],
         }
     }
 }
@@ -180,6 +258,14 @@ enum SpectraColors {
 fn color_to_point(color: Rgb<f32>) -> Point3<f32> {
     let [r, g, b] = color.0;
     Point3::new(r, g, b)
+}
+
+/// BT.709 luma (perceptually-weighted brightness) applied directly in sRGB
+/// space — no gamma round-trip, consistent with the rest of the pipeline
+/// (see notes on Yule-Nielsen optical dot gain in reflective media).
+fn rgb_to_brightness(color: Rgb<f32>) -> f32 {
+    let [r, g, b] = color.0;
+    0.2126 * r + 0.7152 * g + 0.0722 * b
 }
 
 struct InPlaceDitheringWithNoise<I: image::GenericImage, F: Fn(usize, usize) -> Option<f32>> {
@@ -261,8 +347,9 @@ impl<I: image::GenericImage, F: Fn(usize, usize) -> Option<f32>>
     }
 }
 
-struct DecomposingDitherStrategy<D> {
+struct DecomposingDitherStrategy<D, F> {
     decomposer: D,
+    convert: F,
 }
 
 #[derive(Clone)]
@@ -298,9 +385,10 @@ impl core::ops::AddAssign<DecomposedQuantizationError> for DecomposedQuantizatio
     }
 }
 
-impl<D> epd_dither::dither::diffuse::PixelStrategy for DecomposingDitherStrategy<D>
+impl<D, F> epd_dither::dither::diffuse::PixelStrategy for DecomposingDitherStrategy<D, F>
 where
-    D: Decomposer<f32, Input = Point3<f32>>,
+    D: Decomposer<f32>,
+    F: Fn(Rgb<f32>) -> D::Input,
 {
     type Source = (Rgb<f32>, Option<f32>); // Take both a pixel and an optional noise
     type Target = usize;
@@ -314,7 +402,7 @@ where
         let (source, noise) = source;
         let mut decomposed = DVector::zeros(self.decomposer.palette_size());
         self.decomposer
-            .decompose_into(&color_to_point(source), decomposed.as_mut_slice());
+            .decompose_into(&(self.convert)(source), decomposed.as_mut_slice());
         let decomposed = match error.0 {
             None => decomposed,
             Some(error) => decomposed + error,
@@ -386,7 +474,10 @@ fn main() {
                 .unwrap()
                 .with_strategy(OctahedronDecomposerAxisStrategy::Closest);
             epd_dither::dither::diffuse::diffuse_dither(
-                DecomposingDitherStrategy { decomposer },
+                DecomposingDitherStrategy {
+                    decomposer,
+                    convert: color_to_point,
+                },
                 matrix,
                 &mut inout,
                 true,
@@ -397,7 +488,10 @@ fn main() {
                 .unwrap()
                 .with_strategy(OctahedronDecomposerAxisStrategy::Furthest);
             epd_dither::dither::diffuse::diffuse_dither(
-                DecomposingDitherStrategy { decomposer },
+                DecomposingDitherStrategy {
+                    decomposer,
+                    convert: color_to_point,
+                },
                 matrix,
                 &mut inout,
                 true,
@@ -408,7 +502,10 @@ fn main() {
                 .unwrap()
                 .with_strategy(NaiveDecomposerStrategy::FavorMix);
             epd_dither::dither::diffuse::diffuse_dither(
-                DecomposingDitherStrategy { decomposer },
+                DecomposingDitherStrategy {
+                    decomposer,
+                    convert: color_to_point,
+                },
                 matrix,
                 &mut inout,
                 true,
@@ -419,7 +516,47 @@ fn main() {
                 .unwrap()
                 .with_strategy(NaiveDecomposerStrategy::FavorDominant);
             epd_dither::dither::diffuse::diffuse_dither(
-                DecomposingDitherStrategy { decomposer },
+                DecomposingDitherStrategy {
+                    decomposer,
+                    convert: color_to_point,
+                },
+                matrix,
+                &mut inout,
+                true,
+            );
+        }
+        DecomposeStrategy::Grayscale(spread_ratio) => {
+            // Validate r == g == b for every dither-palette entry and that the
+            // resulting brightness levels are strictly ascending. The output
+            // palette index has to align with `dither_palette` order, so we
+            // require sorted input rather than sorting internally.
+            let levels: Vec<f32> = dither_palette_as_points
+                .iter()
+                .enumerate()
+                .map(|(i, p)| {
+                    if !(p.x == p.y && p.y == p.z) {
+                        panic!(
+                            "grayscale strategy requires r == g == b for every dither-palette entry; entry {i} = {p:?} is not achromatic"
+                        );
+                    }
+                    p.x
+                })
+                .collect();
+            for w in levels.windows(2) {
+                if !(w[0] < w[1]) {
+                    panic!(
+                        "grayscale dither-palette must be sorted strictly ascending by brightness"
+                    );
+                }
+            }
+            let decomposer = GrayDecomposer::new(levels)
+                .unwrap()
+                .with_spread_ratio(spread_ratio);
+            epd_dither::dither::diffuse::diffuse_dither(
+                DecomposingDitherStrategy {
+                    decomposer,
+                    convert: rgb_to_brightness,
+                },
                 matrix,
                 &mut inout,
                 true,
@@ -433,9 +570,15 @@ fn main() {
     );
     output.set_color(png::ColorType::Indexed);
     output.set_depth(png::BitDepth::Eight);
-    let palette : Vec<u8> = args.output_palette.as_slice().iter().flat_map(|rgb| rgb.0.iter()).map(|x| x.clone()).collect();
+    let palette: Vec<u8> = args
+        .output_palette
+        .as_slice()
+        .iter()
+        .flat_map(|rgb| rgb.0.iter())
+        .map(|x| x.clone())
+        .collect();
     output.set_palette(palette);
-    let data : Vec<u8> = inout.target.iter().map(|x| *x as u8).collect();
+    let data: Vec<u8> = inout.target.iter().map(|x| *x as u8).collect();
     let mut output = output.write_header().unwrap();
     output.write_image_data(data.as_slice()).unwrap();
     println!("Done");
