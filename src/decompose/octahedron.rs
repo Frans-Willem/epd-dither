@@ -57,11 +57,14 @@ struct OctahedronDecomposerAxis<T: Scalar + ComplexField> {
 pub struct OctahedronDecomposer<T: Scalar + ComplexField> {
     // Possible axis to use in decomposition
     axis: [OctahedronDecomposerAxis<T>; 3],
+    // Strategy used by the [`Decomposer`](super::Decomposer) trait impl.
+    strategy: OctahedronDecomposerAxisStrategy,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub enum OctahedronDecomposerAxisStrategy {
     Axis(usize),
+    #[default]
     Closest,
     Furthest,
     Average,
@@ -131,7 +134,16 @@ where
                 ];
                 OctahedronDecomposerAxis::new(vertex_index_to_color, colors)
             }))?;
-        Some(Self { axis })
+        Some(Self {
+            axis,
+            strategy: Default::default(),
+        })
+    }
+
+    /// Set the axis-selection strategy used by [`Decomposer::decompose_into`](super::Decomposer::decompose_into).
+    pub fn with_strategy(mut self, strategy: OctahedronDecomposerAxisStrategy) -> Self {
+        self.strategy = strategy;
+        self
     }
 
     pub fn get_axis_from_color(&self, color_index: usize) -> Option<usize> {
@@ -144,24 +156,38 @@ where
         })
     }
 
-    pub fn decompose(
-        &self,
-        color: &Point3<T>,
-        strategy: OctahedronDecomposerAxisStrategy,
-    ) -> Vector6<T> {
-        match strategy {
+}
+
+impl<T: Scalar> super::Decomposer<T> for OctahedronDecomposer<T>
+where
+    T: ComplexField
+        + ClosedSubAssign
+        + ClosedMulAssign
+        + ClosedAddAssign
+        + ClosedDivAssign
+        + Zero
+        + One
+        + PartialOrd,
+{
+    type Input = Point3<T>;
+
+    fn palette_size(&self) -> usize {
+        6
+    }
+
+    fn decompose_into(&self, input: &Point3<T>, out: &mut [T]) {
+        let weights: Vector6<T> = match self.strategy {
             OctahedronDecomposerAxisStrategy::Axis(axis) => {
                 let axis = &self.axis[axis % self.axis.len()];
-                let (barycentric, _) = axis.project(color);
-                barycentric
+                axis.project(input).0
             }
             OctahedronDecomposerAxisStrategy::Average => {
                 let axis = &self.axis[0];
-                let (mut barycentric_global, is_inside) = axis.project(color);
+                let (mut barycentric_global, is_inside) = axis.project(input);
                 if is_inside {
                     let mut divisor: T = one();
                     for axis_index in 1..self.axis.len() {
-                        let (current, _) = self.axis[axis_index].project(color);
+                        let (current, _) = self.axis[axis_index].project(input);
                         barycentric_global += current;
                         divisor += one();
                     }
@@ -173,20 +199,26 @@ where
                 let (axis, _) = self
                     .axis
                     .iter()
-                    .map(|axis| (axis, axis.distance_calc.distance_squared(color)))
+                    .map(|axis| (axis, axis.distance_calc.distance_squared(input)))
                     .reduce(|a, b| if b.1 < a.1 { b } else { a })
                     .unwrap_or((&self.axis[0], num_traits::zero()));
-                axis.project(color).0
+                axis.project(input).0
             }
             OctahedronDecomposerAxisStrategy::Furthest => {
                 let (axis, _) = self
                     .axis
                     .iter()
-                    .map(|axis| (axis, axis.distance_calc.distance_squared(color)))
+                    .map(|axis| (axis, axis.distance_calc.distance_squared(input)))
                     .reduce(|a, b| if b.1 > a.1 { b } else { a })
                     .unwrap_or((&self.axis[0], num_traits::zero()));
-                axis.project(color).0
+                axis.project(input).0
             }
+        };
+        // Owned `Matrix` doesn't implement `IntoIterator`; destructure the
+        // single-column `ArrayStorage` to move each T out into `out`.
+        let [weights]: [[T; 6]; 1] = weights.data.0;
+        for (slot, weight) in out.iter_mut().zip(weights) {
+            *slot = weight;
         }
     }
 }

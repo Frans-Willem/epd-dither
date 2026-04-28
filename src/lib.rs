@@ -6,3 +6,5 @@ pub mod decompose;
 pub mod dither;
 mod helpers;
 pub mod noise;
+
+pub use decompose::Decomposer;

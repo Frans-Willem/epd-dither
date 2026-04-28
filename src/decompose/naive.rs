@@ -3,7 +3,7 @@ use crate::barycentric::tetrahedron::TetrahedronProjector;
 use crate::barycentric::triangle::TriangleProjector;
 use alloc::vec::Vec;
 use itertools::Itertools;
-use nalgebra::base::{DVector, OVector, Scalar, Vector4};
+use nalgebra::base::{OVector, Scalar, Vector4};
 use nalgebra::geometry::Point3;
 use nalgebra::{
     ClosedAddAssign, ClosedDivAssign, ClosedMulAssign, ClosedSubAssign, ComplexField, Const,
@@ -11,8 +11,9 @@ use nalgebra::{
 use num_traits::identities::{One, Zero};
 use num_traits::zero;
 
-#[derive(Debug, Clone)]
+#[derive(Copy, Clone, Debug, Default)]
 pub enum NaiveDecomposerStrategy {
+    #[default]
     FavorMix,
     FavorDominant,
 }
@@ -22,6 +23,8 @@ pub struct NaiveDecomposer<T: Scalar + ComplexField> {
     tetras: Vec<(TetrahedronProjector<T>, [usize; 4])>,
     faces: Vec<(TriangleProjector<T>, [usize; 3])>,
     edges: Vec<(LineProjector<T>, [usize; 2])>,
+    // Strategy used by the [`Decomposer`](super::Decomposer) trait impl.
+    strategy: NaiveDecomposerStrategy,
 }
 
 impl<T: Scalar> NaiveDecomposer<T>
@@ -70,24 +73,34 @@ where
                 tetras,
                 faces,
                 edges,
+                strategy: Default::default(),
             })
         } else {
             None
         }
     }
 
-    fn to_global_barycentric_coordinates<const N: usize>(
+    /// Set the strategy used by [`Decomposer::decompose_into`](super::Decomposer::decompose_into).
+    pub fn with_strategy(mut self, strategy: NaiveDecomposerStrategy) -> Self {
+        self.strategy = strategy;
+        self
+    }
+
+    /// Move local barycentric weights into the global-palette positions of
+    /// `out`. `out` must already be zeroed. Local-vertex indices that exceed
+    /// `num_colors` are silently dropped (their weight is discarded).
+    fn write_global_barycentric<const N: usize>(
         &self,
         local_barycentric: OVector<T, Const<N>>,
         vertex_indices: &[usize; N],
-    ) -> DVector<T> {
-        let mut global_barycentric = DVector::zeros(self.num_colors);
-        for (local_index, global_index) in vertex_indices.iter().enumerate() {
-            if *global_index < self.num_colors {
-                global_barycentric[*global_index] = local_barycentric[local_index].clone();
+        out: &mut [T],
+    ) {
+        let [local]: [[T; N]; 1] = local_barycentric.data.0;
+        for (weight, &global_index) in local.into_iter().zip(vertex_indices.iter()) {
+            if global_index < self.num_colors {
+                out[global_index] = weight;
             }
         }
-        global_barycentric
     }
 
     fn compare_tetra_projection_favor_mix<'t>(
@@ -104,24 +117,48 @@ where
         if b.0.max() > a.0.max() { b } else { a }
     }
 
-    pub fn decompose(&self, pt: &Point3<T>, strategy: NaiveDecomposerStrategy) -> DVector<T> {
+}
+
+impl<T: Scalar> super::Decomposer<T> for NaiveDecomposer<T>
+where
+    T: ComplexField
+        + ClosedSubAssign
+        + ClosedMulAssign
+        + ClosedAddAssign
+        + ClosedDivAssign
+        + Zero
+        + One
+        + PartialOrd,
+{
+    type Input = Point3<T>;
+
+    fn palette_size(&self) -> usize {
+        self.num_colors
+    }
+
+    fn decompose_into(&self, input: &Point3<T>, out: &mut [T]) {
+        for slot in out.iter_mut() {
+            *slot = zero();
+        }
+
         let in_tetras = self.tetras.iter().filter_map(|(tetra, vertex_indices)| {
-            let projected = tetra.project(pt);
+            let projected = tetra.project(input);
             if projected.min() < zero() {
                 None
             } else {
                 Some((projected, vertex_indices))
             }
         });
-        let in_tetras = in_tetras.reduce(match strategy {
+        let in_tetras = in_tetras.reduce(match self.strategy {
             NaiveDecomposerStrategy::FavorMix => Self::compare_tetra_projection_favor_mix,
             NaiveDecomposerStrategy::FavorDominant => Self::compare_tetra_projection_favor_dominant,
         });
         if let Some((local_barycentric, vertex_indices)) = in_tetras {
-            return self.to_global_barycentric_coordinates(local_barycentric, vertex_indices);
+            self.write_global_barycentric(local_barycentric, vertex_indices, out);
+            return;
         }
         let on_faces = self.faces.iter().filter_map(|(triangle, vertex_indices)| {
-            let (projected, distance) = triangle.project(pt);
+            let (projected, distance) = triangle.project(input);
             if projected.min() < zero() {
                 return None;
             }
@@ -135,9 +172,9 @@ where
         });
         let closest_face = on_faces.reduce(|a, b| if b.0 < a.0 { b } else { a });
         let on_edges = self.edges.iter().map(|(edge, vertex_indices)| {
-            let (projected, _) = edge.clipping_project(pt);
+            let (projected, _) = edge.clipping_project(input);
             let projected_pt = edge.bary_to_point(&projected);
-            let distance_sq: T = T::from_real((projected_pt - pt).norm_squared());
+            let distance_sq: T = T::from_real((projected_pt - input).norm_squared());
             (distance_sq, projected, vertex_indices)
         });
         let closest_edge = on_edges.reduce(|a, b| if b.0 < a.0 { b } else { a });
@@ -147,16 +184,16 @@ where
                 Some((edge_distance_sq, edge_barycentric, edge_vertex_indices)),
             ) => {
                 if edge_distance_sq < face_distance_sq {
-                    self.to_global_barycentric_coordinates(edge_barycentric, edge_vertex_indices)
+                    self.write_global_barycentric(edge_barycentric, edge_vertex_indices, out);
                 } else {
-                    self.to_global_barycentric_coordinates(face_barycentric, face_vertex_indices)
+                    self.write_global_barycentric(face_barycentric, face_vertex_indices, out);
                 }
             }
             (Some((_, local_barycentric, vertex_indices)), None) => {
-                self.to_global_barycentric_coordinates(local_barycentric, vertex_indices)
+                self.write_global_barycentric(local_barycentric, vertex_indices, out);
             }
             (None, Some((_, local_barycentric, vertex_indices))) => {
-                self.to_global_barycentric_coordinates(local_barycentric, vertex_indices)
+                self.write_global_barycentric(local_barycentric, vertex_indices, out);
             }
             _ => panic!(),
         }

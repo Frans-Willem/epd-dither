@@ -1,4 +1,5 @@
 use clap::{Parser, ValueEnum};
+use epd_dither::Decomposer;
 use epd_dither::decompose::naive::{NaiveDecomposer, NaiveDecomposerStrategy};
 use epd_dither::decompose::octahedron::{OctahedronDecomposer, OctahedronDecomposerAxisStrategy};
 use image::{DynamicImage, ImageBuffer, ImageReader, Luma, Rgb};
@@ -181,12 +182,6 @@ fn color_to_point(color: Rgb<f32>) -> Point3<f32> {
     Point3::new(r, g, b)
 }
 
-fn owned_to_dynamic_vector<T: nalgebra::Scalar, const N: usize>(
-    vec: nalgebra::SVector<T, N>,
-) -> DVector<T> {
-    DVector::from_column_slice(vec.as_slice())
-}
-
 struct InPlaceDitheringWithNoise<I: image::GenericImage, F: Fn(usize, usize) -> Option<f32>> {
     image: I,
     noise_fn: F,
@@ -363,28 +358,48 @@ fn main() {
         dither_palette_f32.map(color_to_point).collect();
     let decompose: Box<dyn Fn(Point3<f32>) -> DVector<f32>> = match args.strategy {
         DecomposeStrategy::OctahedronClosest => {
-            let decomposer = OctahedronDecomposer::new(&dither_palette_as_points).unwrap();
+            let decomposer = OctahedronDecomposer::new(&dither_palette_as_points)
+                .unwrap()
+                .with_strategy(OctahedronDecomposerAxisStrategy::Closest);
+            let n = decomposer.palette_size();
             Box::new(move |x| {
-                owned_to_dynamic_vector(
-                    decomposer.decompose(&x, OctahedronDecomposerAxisStrategy::Closest),
-                )
+                let mut v = DVector::zeros(n);
+                decomposer.decompose_into(&x, v.as_mut_slice());
+                v
             })
         }
         DecomposeStrategy::OctahedronFurthest => {
-            let decomposer = OctahedronDecomposer::new(&dither_palette_as_points).unwrap();
+            let decomposer = OctahedronDecomposer::new(&dither_palette_as_points)
+                .unwrap()
+                .with_strategy(OctahedronDecomposerAxisStrategy::Furthest);
+            let n = decomposer.palette_size();
             Box::new(move |x| {
-                owned_to_dynamic_vector(
-                    decomposer.decompose(&x, OctahedronDecomposerAxisStrategy::Furthest),
-                )
+                let mut v = DVector::zeros(n);
+                decomposer.decompose_into(&x, v.as_mut_slice());
+                v
             })
         }
         DecomposeStrategy::NaiveMix => {
-            let decomposer = NaiveDecomposer::new(dither_palette_as_points.as_slice()).unwrap();
-            Box::new(move |x| decomposer.decompose(&x, NaiveDecomposerStrategy::FavorMix))
+            let decomposer = NaiveDecomposer::new(dither_palette_as_points.as_slice())
+                .unwrap()
+                .with_strategy(NaiveDecomposerStrategy::FavorMix);
+            let n = decomposer.palette_size();
+            Box::new(move |x| {
+                let mut v = DVector::zeros(n);
+                decomposer.decompose_into(&x, v.as_mut_slice());
+                v
+            })
         }
         DecomposeStrategy::NaiveDominant => {
-            let decomposer = NaiveDecomposer::new(dither_palette_as_points.as_slice()).unwrap();
-            Box::new(move |x| decomposer.decompose(&x, NaiveDecomposerStrategy::FavorDominant))
+            let decomposer = NaiveDecomposer::new(dither_palette_as_points.as_slice())
+                .unwrap()
+                .with_strategy(NaiveDecomposerStrategy::FavorDominant);
+            let n = decomposer.palette_size();
+            Box::new(move |x| {
+                let mut v = DVector::zeros(n);
+                decomposer.decompose_into(&x, v.as_mut_slice());
+                v
+            })
         }
     };
 
