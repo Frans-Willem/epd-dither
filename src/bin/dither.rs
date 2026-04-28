@@ -3,7 +3,7 @@ use epd_dither::Decomposer;
 use epd_dither::decompose::gray::GrayDecomposer;
 use epd_dither::decompose::naive::{NaiveDecomposer, NaiveDecomposerStrategy};
 use epd_dither::decompose::octahedron::{OctahedronDecomposer, OctahedronDecomposerAxisStrategy};
-use image::{DynamicImage, ImageBuffer, ImageReader, Luma, Rgb};
+use image::{ImageBuffer, ImageReader, Luma, Rgb};
 use nalgebra::DVector;
 use nalgebra::geometry::Point3;
 use rand::distr::StandardUniform;
@@ -268,44 +268,6 @@ fn rgb_to_brightness(color: Rgb<f32>) -> f32 {
     0.2126 * r + 0.7152 * g + 0.0722 * b
 }
 
-struct InPlaceDitheringWithNoise<I: image::GenericImage, F: Fn(usize, usize) -> Option<f32>> {
-    image: I,
-    noise_fn: F,
-    palette: Vec<I::Pixel>,
-}
-
-impl<I: image::GenericImage, F: Fn(usize, usize) -> Option<f32>>
-    epd_dither::dither::diffuse::ImageSize for InPlaceDitheringWithNoise<I, F>
-{
-    fn width(&self) -> usize {
-        self.image.width() as usize
-    }
-    fn height(&self) -> usize {
-        self.image.height() as usize
-    }
-}
-
-impl<I: image::GenericImage, F: Fn(usize, usize) -> Option<f32>>
-    epd_dither::dither::diffuse::ImageReader<(I::Pixel, Option<f32>)>
-    for InPlaceDitheringWithNoise<I, F>
-{
-    fn get_pixel(&self, x: usize, y: usize) -> (I::Pixel, Option<f32>) {
-        (
-            self.image.get_pixel(x as u32, y as u32),
-            (self.noise_fn)(x, y),
-        )
-    }
-}
-
-impl<I: image::GenericImage, F: Fn(usize, usize) -> Option<f32>>
-    epd_dither::dither::diffuse::ImageWriter<usize> for InPlaceDitheringWithNoise<I, F>
-{
-    fn put_pixel(&mut self, x: usize, y: usize, pixel: usize) {
-        self.image
-            .put_pixel(x as u32, y as u32, self.palette[pixel])
-    }
-}
-
 struct PaletteDitheringWithNoise<I: image::GenericImage, F: Fn(usize, usize) -> Option<f32>> {
     image: I,
     noise_fn: F,
@@ -352,25 +314,19 @@ struct DecomposingDitherStrategy<D, F> {
     convert: F,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 struct DecomposedQuantizationError(Option<DVector<f32>>);
-
-impl Default for DecomposedQuantizationError {
-    fn default() -> Self {
-        Self(None)
-    }
-}
 
 impl core::ops::Mul<usize> for DecomposedQuantizationError {
     type Output = Self;
-    fn mul(self: Self, rhs: usize) -> Self {
+    fn mul(self, rhs: usize) -> Self {
         Self(self.0.map(|x| x * (rhs as f32)))
     }
 }
 
 impl core::ops::Div<usize> for DecomposedQuantizationError {
     type Output = Self;
-    fn div(self: Self, rhs: usize) -> Self {
+    fn div(self, rhs: usize) -> Self {
         Self(self.0.map(|x| x / (rhs as f32)))
     }
 }
@@ -457,7 +413,7 @@ fn main() {
         )),
         NoiseSource::White => Some(rand::rng().sample(StandardUniform)),
         NoiseSource::File(ref f) => {
-            Some(f.get_pixel(x as u32 % f.width(), y as u32 % f.height()).0[0].clone())
+            Some(f.get_pixel(x as u32 % f.width(), y as u32 % f.height()).0[0])
         }
         NoiseSource::None => None,
     };
@@ -543,7 +499,7 @@ fn main() {
                 })
                 .collect();
             for w in levels.windows(2) {
-                if !(w[0] < w[1]) {
+                if w[0] >= w[1] {
                     panic!(
                         "grayscale dither-palette must be sorted strictly ascending by brightness"
                     );
@@ -574,8 +530,7 @@ fn main() {
         .output_palette
         .as_slice()
         .iter()
-        .flat_map(|rgb| rgb.0.iter())
-        .map(|x| x.clone())
+        .flat_map(|rgb| rgb.0)
         .collect();
     output.set_palette(palette);
     let data: Vec<u8> = inout.target.iter().map(|x| *x as u8).collect();

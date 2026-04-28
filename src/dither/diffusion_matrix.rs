@@ -115,7 +115,7 @@ impl DiffusionMatrix for DynamicDiffusionMatrix {
     }
 }
 impl DynamicDiffusionMatrix {
-    fn new<T: DiffusionMatrix>(t: T) -> Self {
+    pub fn new<T: DiffusionMatrix>(t: T) -> Self {
         Self(Vec::from(t.targets()), t.divisor())
     }
 }

@@ -43,7 +43,7 @@ where
         let tetras: Vec<(TetrahedronProjector<T>, [usize; 4])> = (0..num_colors)
             .combinations(4)
             .filter_map(|vertex_indices| {
-                let vertex_indices: [usize; 4] = vertex_indices.try_into().unwrap();
+                let vertex_indices: [usize; 4] = vertex_indices.try_into().ok()?;
                 let vertex_points = vertex_indices.map(|i| colors[i].clone());
                 let tetrahedron = TetrahedronProjector::new(vertex_points)?;
                 Some((tetrahedron, vertex_indices))
@@ -52,7 +52,7 @@ where
         let faces: Vec<(TriangleProjector<T>, [usize; 3])> = (0..num_colors)
             .combinations(3)
             .filter_map(|vertex_indices| {
-                let vertex_indices: [usize; 3] = vertex_indices.try_into().unwrap();
+                let vertex_indices: [usize; 3] = vertex_indices.try_into().ok()?;
                 let vertex_points = vertex_indices.map(|i| colors[i].clone());
                 let triangle = TriangleProjector::new(vertex_points)?;
                 Some((triangle, vertex_indices))
@@ -61,13 +61,13 @@ where
         let edges: Vec<(LineProjector<T>, [usize; 2])> = (0..num_colors)
             .combinations(2)
             .filter_map(|vertex_indices| {
-                let vertex_indices: [usize; 2] = vertex_indices.try_into().unwrap();
+                let vertex_indices: [usize; 2] = vertex_indices.try_into().ok()?;
                 let vertex_points = vertex_indices.map(|i| colors[i].clone());
                 let line = LineProjector::new(vertex_points)?;
                 Some((line, vertex_indices))
             })
             .collect();
-        if tetras.len() > 0 || faces.len() > 0 || edges.len() > 0 {
+        if !tetras.is_empty() || !faces.is_empty() || !edges.is_empty() {
             Some(Self {
                 num_colors,
                 tetras,
@@ -116,7 +116,6 @@ where
     ) -> (Vector4<T>, &'t [usize; 4]) {
         if b.0.max() > a.0.max() { b } else { a }
     }
-
 }
 
 impl<T: Scalar> super::Decomposer<T> for NaiveDecomposer<T>
@@ -195,7 +194,7 @@ where
             (None, Some((_, local_barycentric, vertex_indices))) => {
                 self.write_global_barycentric(local_barycentric, vertex_indices, out);
             }
-            _ => panic!(),
+            _ => unreachable!(),
         }
     }
 }

@@ -5,11 +5,6 @@ use nalgebra::{ClosedAddAssign, ClosedDivAssign, ClosedMulAssign, ClosedSubAssig
 use num_traits::identities::{One, Zero};
 use num_traits::one;
 
-/**
- * This decomposer can be used if the points (colors) form a regular convex octahedron.
- * On a single core of an ESP32-S3 it can decompose an 800x480 f32 image in under 5 seconds.
- */
-
 struct LineDistanceCalculator<T: Scalar + ComplexField> {
     // P = origin + t * direction
     origin: Point3<T>,
@@ -54,6 +49,9 @@ struct OctahedronDecomposerAxis<T: Scalar + ComplexField> {
     color_to_vertex_index: [usize; 6],
 }
 
+/// Decomposer for palettes whose points (colours) form a regular convex
+/// octahedron (the structurally-symmetric Spectra 6 case). On a single core
+/// of an ESP32-S3 it can decompose an 800×480 f32 image in under 5 seconds.
 pub struct OctahedronDecomposer<T: Scalar + ComplexField> {
     // Possible axis to use in decomposition
     axis: [OctahedronDecomposerAxis<T>; 3],
@@ -155,7 +153,6 @@ where
             }
         })
     }
-
 }
 
 impl<T: Scalar> super::Decomposer<T> for OctahedronDecomposer<T>

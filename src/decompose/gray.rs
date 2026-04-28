@@ -22,6 +22,9 @@ where
     /// Construct a decomposer for the given strictly-ascending levels.
     /// Returns `None` if `levels.len() < 2` or the levels are not sorted
     /// ascending (which also rejects palettes containing NaN levels).
+    // `!(a < b)` rather than `a >= b` so NaN comparisons (which return false)
+    // get rejected via the negation rather than silently admitted.
+    #[allow(clippy::neg_cmp_op_on_partial_ord)]
     pub fn new(levels: Vec<T>) -> Option<Self> {
         if levels.len() < 2 {
             return None;
@@ -68,7 +71,10 @@ where
         let num_levels = self.levels.len();
         // Bracket: input ∈ [levels[left], levels[right]] with right = left + 1.
         // Inputs outside the palette range collapse onto the nearest edge
-        // bracket (u clamps to 0 or 1 below).
+        // bracket (u clamps to 0 or 1 below). Negated comparison (rather than
+        // `l >= input`) so a NaN input lands on the upper-edge collapse path
+        // rather than producing weights at undefined positions.
+        #[allow(clippy::neg_cmp_op_on_partial_ord)]
         let right = self
             .levels
             .iter()
@@ -118,9 +124,8 @@ where
             //   spread_to_right     = ratio_spread_left * (L[left]  - L[left-1])  / (L[right] - L[left-1])
             let value_left_left = self.levels[left - 1].clone();
             let span = value_right.clone() - value_left_left;
-            let spread_to_left_left = ratio_spread_left.clone()
-                * (value_right.clone() - value_left.clone())
-                / span;
+            let spread_to_left_left =
+                ratio_spread_left.clone() * (value_right.clone() - value_left.clone()) / span;
             let spread_to_right = ratio_spread_left - spread_to_left_left.clone();
             out[left - 1] += spread_to_left_left;
             out[right] += spread_to_right;
@@ -142,9 +147,8 @@ where
             //   spread_to_right_right   = ratio_spread_right * (L[right]   - L[left])  / (L[right+1] - L[left])
             let value_right_right = self.levels[right + 1].clone();
             let span = value_right_right - value_left.clone();
-            let spread_to_right_right = ratio_spread_right.clone()
-                * (value_right - value_left)
-                / span;
+            let spread_to_right_right =
+                ratio_spread_right.clone() * (value_right - value_left) / span;
             let spread_to_left = ratio_spread_right - spread_to_right_right.clone();
             out[left] += spread_to_left;
             out[right + 1] += spread_to_right_right;
