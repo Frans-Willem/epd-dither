@@ -12,7 +12,6 @@ pub const GRAYSCALE16: [u8; 16] = [
 
 use crate::decompose::Decomposer;
 use crate::helpers::{partial_clamp, partial_max};
-use alloc::vec::Vec;
 use core::ops::{Add, AddAssign, Div, Mul, Sub};
 use num_traits::{One, Zero};
 
@@ -22,13 +21,18 @@ use num_traits::{One, Zero};
 /// Levels are supplied sorted strictly ascending. The `spread_ratio`
 /// (in `[0, 1]`) controls how much weight is redistributed beyond the
 /// bracketing level pair, mitigating visible banding at level boundaries.
-pub struct GrayDecomposer<T> {
-    levels: Vec<T>,
+///
+/// `L` is the levels storage; any `AsRef<[T]>` works (`Vec<T>`, `[T; N]`,
+/// `&[T]`, `tinyvec::ArrayVec<[T; N]>`, …) so the decomposer is usable
+/// without an allocator.
+pub struct GrayDecomposer<L, T> {
+    levels: L,
     spread_ratio: T,
 }
 
-impl<T> GrayDecomposer<T>
+impl<L, T> GrayDecomposer<L, T>
 where
+    L: AsRef<[T]>,
     T: Clone + PartialOrd + Zero,
 {
     /// Construct a decomposer for the given strictly-ascending levels.
@@ -37,11 +41,12 @@ where
     // `!(a < b)` rather than `a >= b` so NaN comparisons (which return false)
     // get rejected via the negation rather than silently admitted.
     #[allow(clippy::neg_cmp_op_on_partial_ord)]
-    pub fn new(levels: Vec<T>) -> Option<Self> {
-        if levels.len() < 2 {
+    pub fn new(levels: L) -> Option<Self> {
+        let slice = levels.as_ref();
+        if slice.len() < 2 {
             return None;
         }
-        for w in levels.windows(2) {
+        for w in slice.windows(2) {
             if !(w[0] < w[1]) {
                 return None;
             }
@@ -53,7 +58,7 @@ where
     }
 }
 
-impl<T> GrayDecomposer<T> {
+impl<L, T> GrayDecomposer<L, T> {
     /// Set the spread ratio used by
     /// [`Decomposer::decompose_into`](super::Decomposer::decompose_into).
     /// Caller is responsible for clamping to `[0, 1]`.
@@ -63,8 +68,9 @@ impl<T> GrayDecomposer<T> {
     }
 }
 
-impl<T> Decomposer<T> for GrayDecomposer<T>
+impl<L, T> Decomposer<T> for GrayDecomposer<L, T>
 where
+    L: AsRef<[T]>,
     T: Clone + PartialOrd + Zero + One,
     T: Add<Output = T> + Sub<Output = T> + Mul<Output = T> + Div<Output = T>,
     T: AddAssign,
@@ -72,7 +78,7 @@ where
     type Input = T;
 
     fn palette_size(&self) -> usize {
-        self.levels.len()
+        self.levels.as_ref().len()
     }
 
     fn decompose_into(&self, input: &T, out: &mut [T]) {
@@ -80,15 +86,15 @@ where
             *slot = T::zero();
         }
 
-        let num_levels = self.levels.len();
+        let levels = self.levels.as_ref();
+        let num_levels = levels.len();
         // Bracket: input ∈ [levels[left], levels[right]] with right = left + 1.
         // Inputs outside the palette range collapse onto the nearest edge
         // bracket (u clamps to 0 or 1 below). Negated comparison (rather than
         // `l >= input`) so a NaN input lands on the upper-edge collapse path
         // rather than producing weights at undefined positions.
         #[allow(clippy::neg_cmp_op_on_partial_ord)]
-        let right = self
-            .levels
+        let right = levels
             .iter()
             .position(|l| !(l < input))
             .unwrap_or(num_levels);
@@ -103,8 +109,8 @@ where
             return;
         }
         let left = right - 1;
-        let value_left = self.levels[left].clone();
-        let value_right = self.levels[right].clone();
+        let value_left = levels[left].clone();
+        let value_right = levels[right].clone();
 
         // How much of right and left we should dither together to produce this input
         let ratio_right = partial_clamp(
@@ -134,7 +140,7 @@ where
             // gives:
             //   spread_to_left_left = ratio_spread_left * (L[right] - L[left])    / (L[right] - L[left-1])
             //   spread_to_right     = ratio_spread_left * (L[left]  - L[left-1])  / (L[right] - L[left-1])
-            let value_left_left = self.levels[left - 1].clone();
+            let value_left_left = levels[left - 1].clone();
             let span = value_right.clone() - value_left_left;
             let spread_to_left_left =
                 ratio_spread_left.clone() * (value_right.clone() - value_left.clone()) / span;
@@ -157,7 +163,7 @@ where
             // ratio_spread_right and have mean L[right].
             //   spread_to_left          = ratio_spread_right * (L[right+1] - L[right]) / (L[right+1] - L[left])
             //   spread_to_right_right   = ratio_spread_right * (L[right]   - L[left])  / (L[right+1] - L[left])
-            let value_right_right = self.levels[right + 1].clone();
+            let value_right_right = levels[right + 1].clone();
             let span = value_right_right - value_left.clone();
             let spread_to_right_right =
                 ratio_spread_right.clone() * (value_right - value_left) / span;

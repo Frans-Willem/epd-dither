@@ -1,5 +1,3 @@
-use crate::dither::diffusion_matrix::DiffusionMatrix;
-use alloc::vec::Vec;
 use core::ops::{AddAssign, Div, Mul};
 
 pub trait PixelStrategy {
@@ -31,6 +29,7 @@ pub trait ImageWriter<T> {
     fn put_pixel(&mut self, x: usize, y: usize, pixel: T);
 }
 
+#[cfg(feature = "alloc")]
 fn add_usize_usize_clamped(a: usize, b: usize, limit: usize) -> Option<usize> {
     if a < limit && limit - a > b {
         Some(a + b)
@@ -39,6 +38,7 @@ fn add_usize_usize_clamped(a: usize, b: usize, limit: usize) -> Option<usize> {
     }
 }
 
+#[cfg(feature = "alloc")]
 fn add_usize_isize_clamped(a: usize, b: isize, limit: usize) -> Option<usize> {
     if b > 0 {
         add_usize_usize_clamped(a, b as usize, limit)
@@ -51,12 +51,14 @@ fn add_usize_isize_clamped(a: usize, b: isize, limit: usize) -> Option<usize> {
     }
 }
 
+#[cfg(feature = "alloc")]
 struct RangeWithDir {
     min_inclusive: usize,
     max_exclusive: usize,
     dir: isize,
 }
 
+#[cfg(feature = "alloc")]
 impl RangeWithDir {
     fn new(min_inclusive: usize, max_exclusive: usize, dir: isize) -> Self {
         Self {
@@ -67,6 +69,7 @@ impl RangeWithDir {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl Iterator for RangeWithDir {
     type Item = usize;
     fn next(&mut self) -> Option<Self::Item> {
@@ -92,9 +95,10 @@ impl Iterator for RangeWithDir {
     }
 }
 
+#[cfg(feature = "alloc")]
 pub fn diffuse_dither<
     S: PixelStrategy,
-    M: DiffusionMatrix,
+    M: crate::dither::diffusion_matrix::DiffusionMatrix,
     I: ImageSize + ImageReader<S::Source> + ImageWriter<S::Target>,
 >(
     strategy: S,
@@ -102,6 +106,7 @@ pub fn diffuse_dither<
     inout: &mut I,
     serpentine: bool,
 ) {
+    use alloc::vec::Vec;
     // Store width and height once for easy access and to make sure it doesn't change out from under
     // us ;)
     let width = inout.width();

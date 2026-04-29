@@ -1,6 +1,7 @@
 #![no_std]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-extern crate alloc; // TODO: Can we put this behind a feature?
+#[cfg(feature = "alloc")]
+extern crate alloc;
 pub mod barycentric;
 pub mod decompose;
 pub mod dither;

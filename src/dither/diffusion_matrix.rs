@@ -1,10 +1,9 @@
-use alloc::vec::Vec;
-
 pub trait DiffusionMatrix {
     fn divisor(&self) -> usize;
     fn targets(&self) -> &[(isize, usize, usize)];
 }
 
+#[cfg(feature = "alloc")]
 impl DiffusionMatrix for alloc::boxed::Box<dyn DiffusionMatrix> {
     fn divisor(&self) -> usize {
         self.as_ref().divisor()
@@ -105,7 +104,9 @@ impl DiffusionMatrix for Sierra {
     }
 }
 
-pub struct DynamicDiffusionMatrix(Vec<(isize, usize, usize)>, usize);
+#[cfg(feature = "alloc")]
+pub struct DynamicDiffusionMatrix(alloc::vec::Vec<(isize, usize, usize)>, usize);
+#[cfg(feature = "alloc")]
 impl DiffusionMatrix for DynamicDiffusionMatrix {
     fn divisor(&self) -> usize {
         self.1
@@ -114,8 +115,9 @@ impl DiffusionMatrix for DynamicDiffusionMatrix {
         self.0.as_slice()
     }
 }
+#[cfg(feature = "alloc")]
 impl DynamicDiffusionMatrix {
     pub fn new<T: DiffusionMatrix>(t: T) -> Self {
-        Self(Vec::from(t.targets()), t.divisor())
+        Self(alloc::vec::Vec::from(t.targets()), t.divisor())
     }
 }

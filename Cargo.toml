@@ -6,10 +6,12 @@ edition = "2024"
 [features]
 default = ["with-binaries"]
 with-binaries = [
+	"alloc",
 	"image",
 	"clap",
 	"rand",
 ]
+alloc = []
 clap = ["dep:clap"]
 image = ["dep:image"]
 rand = ["dep:rand"]

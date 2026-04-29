@@ -22,14 +22,8 @@ Allow Floyd-Steinberg (and other diffusion methods) to operate either on the raw
 ### Alternative grayscale spread strategy
 For input `I`, run the bracket/ratio decomposition on both `I-spread` and `I+spread` independently, then linearly interpolate the two resulting weight vectors so the combined mean is `I`. Compare against the current asymmetric mean-preserving spread in `GrayDecomposer`.
 
-### Gate `alloc` behind a feature
-Move `extern crate alloc` behind an `alloc` Cargo feature so `DecomposeBruteforce` (which hard-requires `Vec`) is opt-in. Embedded callers without an allocator should compile cleanly.
-
 ### no-alloc N-channel naive decomposer
 Add `NaiveDecomposerN<T, const MAX: usize>` alongside the alloc-required `NaiveDecomposer`. Deferred during initial `Decomposer`-trait design until `GrayDecomposer` landed; unblocked now.
-
-### Reuse the per-pixel weight buffer
-`DecomposingDitherStrategy::quantize` allocates a fresh `DVector` per pixel. Cache it via interior mutability on the strategy so the whole image shares one buffer.
 
 ## Measurement
 
