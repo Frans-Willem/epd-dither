@@ -46,7 +46,7 @@ for strategy in octahedron-closest octahedron-furthest naive-mix naive-dominant;
 done
 
 # Grayscale strategies need a grayscale palette; using grayscale4 here.
-for strategy in grayscale gray-pure-spread:0.25 gray-pure-spread:0.5 gray-pure-spread:1; do
+for strategy in grayscale gray-pure-spread:0.25 gray-pure-spread:0.5 gray-pure-spread:1 gray-offset-blend:0.25 gray-offset-blend:0.5 gray-offset-blend:1; do
     for noise in "${NOISES[@]}"; do
         run_dither "$strategy" "$noise" --dither-palette grayscale4 --output-palette grayscale4
     done

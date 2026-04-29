@@ -1,5 +1,7 @@
 use clap::{Parser, ValueEnum};
-use epd_dither::decompose::gray::{GRAYSCALE2, GRAYSCALE4, GRAYSCALE16, PureSpreadGrayDecomposer};
+use epd_dither::decompose::gray::{
+    GRAYSCALE2, GRAYSCALE4, GRAYSCALE16, OffsetBlendGrayDecomposer, PureSpreadGrayDecomposer,
+};
 use epd_dither::decompose::naive::{EPDOPTIMIZE, NaiveDecomposer, NaiveDecomposerStrategy};
 use epd_dither::decompose::octahedron::{
     NAIVE_RGB6, OctahedronDecomposer, OctahedronDecomposerAxisStrategy, SPECTRA6,
@@ -88,8 +90,7 @@ enum DecomposeStrategy {
     /// `PureSpreadGrayDecomposer` with the given spread ratio in [0, 1].
     GrayPureSpread(f32),
     /// `OffsetBlendGrayDecomposer` with the given offset in input-space units.
-    /// Not yet implemented — accepted by the parser, errors at runtime.
-    GrayOffsetBlend(#[allow(dead_code)] f32),
+    GrayOffsetBlend(f32),
 }
 
 impl DecomposeStrategy {
@@ -102,7 +103,7 @@ impl DecomposeStrategy {
         " naive-dominant            Naive, favour dominant component\n",
         " grayscale                 1-D grayscale, no spread\n",
         " gray-pure-spread:<r>      Pure-spread grayscale, r in [0, 1]\n",
-        " gray-offset-blend:<r>     Offset-blend grayscale, r in [0, 1] (not yet implemented)\n\n",
+        " gray-offset-blend:<r>     Offset-blend grayscale, r in [0, 1]\n\n",
         "Examples:\n",
         " --strategy octahedron-closest\n",
         " --strategy grayscale\n",
@@ -395,8 +396,17 @@ fn main() {
                 true,
             );
         }
-        DecomposeStrategy::GrayOffsetBlend(_) => {
-            panic!("gray-offset-blend strategy is not yet implemented");
+        DecomposeStrategy::GrayOffsetBlend(offset) => {
+            let levels = grayscale_levels(&dither_palette_as_points);
+            let decomposer = OffsetBlendGrayDecomposer::new(levels)
+                .unwrap()
+                .with_offset(offset);
+            epd_dither::dither::diffuse::diffuse_dither(
+                DecomposingDitherStrategy::new(decomposer, rgb_to_brightness),
+                matrix,
+                &mut inout,
+                true,
+            );
         }
     }
     let mut output = png::Encoder::new(
