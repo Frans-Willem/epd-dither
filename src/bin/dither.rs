@@ -375,16 +375,21 @@ fn main() {
                 true,
             );
         }
-        DecomposeStrategy::Grayscale | DecomposeStrategy::GrayPureSpread(_) => {
-            // Spread ratio: 0 for the no-spread `Grayscale` form, the supplied
-            // r for `gray-pure-spread:<r>`. Any of the gray decomposers would
-            // produce identical output at spread = 0; route through
-            // `PureSpreadGrayDecomposer` for now.
-            let spread_ratio = match args.strategy {
-                DecomposeStrategy::Grayscale => 0.0,
-                DecomposeStrategy::GrayPureSpread(r) => r,
-                _ => unreachable!(),
-            };
+        DecomposeStrategy::Grayscale => {
+            // Both gray decomposers produce identical output at parameter = 0
+            // (plain bracket decomposition), but OffsetBlend takes its
+            // early-out path while PureSpread still runs the full
+            // asymmetric-spread arithmetic. Route through OffsetBlend.
+            let levels = grayscale_levels(&dither_palette_as_points);
+            let decomposer = OffsetBlendGrayDecomposer::new(levels).unwrap();
+            epd_dither::dither::diffuse::diffuse_dither(
+                DecomposingDitherStrategy::new(decomposer, rgb_to_brightness),
+                matrix,
+                &mut inout,
+                true,
+            );
+        }
+        DecomposeStrategy::GrayPureSpread(spread_ratio) => {
             let levels = grayscale_levels(&dither_palette_as_points);
             let decomposer = PureSpreadGrayDecomposer::new(levels)
                 .unwrap()
