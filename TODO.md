@@ -20,10 +20,10 @@ Over a 4-colour palette most input colours have at least three valid barycentric
 Allow Floyd-Steinberg (and other diffusion methods) to operate either on the raw RGB residual or on per-component decomposition weights — expose both modes (e.g. `dither-rgb`, `dither-decompose`) so the caller can choose.
 
 ### Alternative grayscale spread strategy
-For input `I`, run the bracket/ratio decomposition on both `I-spread` and `I+spread` independently, then linearly interpolate the two resulting weight vectors so the combined mean is `I`. Compare against the current asymmetric mean-preserving spread in `GrayDecomposer`.
+Add `OffsetBlendGrayDecomposer` alongside `PureSpreadGrayDecomposer`. For input `I`, run the bracket/ratio decomposition on both `I-spread` and `I+spread` independently, then linearly interpolate the two resulting weight vectors so the combined mean is `I`. Compare against the asymmetric mean-preserving spread in `PureSpreadGrayDecomposer`.
 
 ### no-alloc N-channel naive decomposer
-Add `NaiveDecomposerN<T, const MAX: usize>` alongside the alloc-required `NaiveDecomposer`. Deferred during initial `Decomposer`-trait design until `GrayDecomposer` landed; unblocked now.
+Add `NaiveDecomposerN<T, const MAX: usize>` alongside the alloc-required `NaiveDecomposer`. Deferred during initial `Decomposer`-trait design until the gray decomposer landed; unblocked now.
 
 ## Measurement
 

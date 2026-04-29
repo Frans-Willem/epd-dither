@@ -16,21 +16,24 @@ use core::ops::{Add, AddAssign, Div, Mul, Sub};
 use num_traits::{One, Zero};
 
 /// Decomposes a scalar into per-level weights for a 1D palette such as a
-/// grayscale e-paper display.
+/// grayscale e-paper display, spreading weight asymmetrically beyond the
+/// bracketing level pair to mitigate visible banding.
 ///
-/// Levels are supplied sorted strictly ascending. The `spread_ratio`
-/// (in `[0, 1]`) controls how much weight is redistributed beyond the
-/// bracketing level pair, mitigating visible banding at level boundaries.
+/// The amount redistributed peaks when the input coincides with a palette
+/// level (i.e. a "pure" colour gets spread into its neighbours) and is zero
+/// at the midpoint between two levels. `spread_ratio` in `[0, 1]` scales
+/// that maximum.
 ///
-/// `L` is the levels storage; any `AsRef<[T]>` works (`Vec<T>`, `[T; N]`,
-/// `&[T]`, `tinyvec::ArrayVec<[T; N]>`, …) so the decomposer is usable
-/// without an allocator.
-pub struct GrayDecomposer<L, T> {
+/// Levels are supplied sorted strictly ascending. `L` is the levels storage;
+/// any `AsRef<[T]>` works (`Vec<T>`, `[T; N]`, `&[T]`,
+/// `tinyvec::ArrayVec<[T; N]>`, …) so the decomposer is usable without an
+/// allocator.
+pub struct PureSpreadGrayDecomposer<L, T> {
     levels: L,
     spread_ratio: T,
 }
 
-impl<L, T> GrayDecomposer<L, T>
+impl<L, T> PureSpreadGrayDecomposer<L, T>
 where
     L: AsRef<[T]>,
     T: Clone + PartialOrd + Zero,
@@ -58,7 +61,7 @@ where
     }
 }
 
-impl<L, T> GrayDecomposer<L, T> {
+impl<L, T> PureSpreadGrayDecomposer<L, T> {
     /// Set the spread ratio used by
     /// [`Decomposer::decompose_into`](super::Decomposer::decompose_into).
     /// Caller is responsible for clamping to `[0, 1]`.
@@ -68,7 +71,7 @@ impl<L, T> GrayDecomposer<L, T> {
     }
 }
 
-impl<L, T> Decomposer<T> for GrayDecomposer<L, T>
+impl<L, T> Decomposer<T> for PureSpreadGrayDecomposer<L, T>
 where
     L: AsRef<[T]>,
     T: Clone + PartialOrd + Zero + One,

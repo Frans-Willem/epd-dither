@@ -1,5 +1,5 @@
 use clap::{Parser, ValueEnum};
-use epd_dither::decompose::gray::{GRAYSCALE2, GRAYSCALE4, GRAYSCALE16, GrayDecomposer};
+use epd_dither::decompose::gray::{GRAYSCALE2, GRAYSCALE4, GRAYSCALE16, PureSpreadGrayDecomposer};
 use epd_dither::decompose::naive::{EPDOPTIMIZE, NaiveDecomposer, NaiveDecomposerStrategy};
 use epd_dither::decompose::octahedron::{
     NAIVE_RGB6, OctahedronDecomposer, OctahedronDecomposerAxisStrategy, SPECTRA6,
@@ -82,25 +82,45 @@ enum DecomposeStrategy {
     OctahedronFurthest,
     NaiveMix,
     NaiveDominant,
-    /// 1-D / grayscale palette decomposition with the given spread ratio in [0, 1].
-    Grayscale(f32),
+    /// No-spread 1-D grayscale; equivalent under any of the gray decomposers.
+    /// Currently routed through `PureSpreadGrayDecomposer` with spread = 0.
+    Grayscale,
+    /// `PureSpreadGrayDecomposer` with the given spread ratio in [0, 1].
+    GrayPureSpread(f32),
+    /// `OffsetBlendGrayDecomposer` with the given offset in input-space units.
+    /// Not yet implemented — accepted by the parser, errors at runtime.
+    GrayOffsetBlend(#[allow(dead_code)] f32),
 }
 
 impl DecomposeStrategy {
     const LONG_HELP: &'static str = concat!(
         "Decomposition strategy.\n\n",
         "Accepted values:\n",
-        " octahedron-closest      Octahedron, pick closest axis (default)\n",
-        " octahedron-furthest     Octahedron, pick furthest axis\n",
-        " naive-mix               Naive, favour mixed weights\n",
-        " naive-dominant          Naive, favour dominant component\n",
-        " grayscale               1-D grayscale, spread = 0.25 (gradient-friendly default)\n",
-        " grayscale:<spread>      1-D grayscale, spread in [0, 1]\n\n",
+        " octahedron-closest        Octahedron, pick closest axis (default)\n",
+        " octahedron-furthest       Octahedron, pick furthest axis\n",
+        " naive-mix                 Naive, favour mixed weights\n",
+        " naive-dominant            Naive, favour dominant component\n",
+        " grayscale                 1-D grayscale, no spread\n",
+        " gray-pure-spread:<r>      Pure-spread grayscale, r in [0, 1]\n",
+        " gray-offset-blend:<r>     Offset-blend grayscale, r in [0, 1] (not yet implemented)\n\n",
         "Examples:\n",
         " --strategy octahedron-closest\n",
         " --strategy grayscale\n",
-        " --strategy grayscale:0.3\n",
+        " --strategy gray-pure-spread:0.25\n",
     );
+}
+
+fn parse_unit_interval(s: &str, prefix: &str) -> Result<f32, String> {
+    let v_str = &s[prefix.len()..];
+    let v = v_str.parse::<f32>().map_err(|_| {
+        format!("invalid value `{s}`: expected `{prefix}<r>` with r a number in [0, 1]")
+    })?;
+    if !(0.0..=1.0).contains(&v) {
+        return Err(format!(
+            "invalid value `{v}` for `{prefix}<r>`: must be in [0, 1]"
+        ));
+    }
+    Ok(v)
 }
 
 impl std::str::FromStr for DecomposeStrategy {
@@ -112,19 +132,13 @@ impl std::str::FromStr for DecomposeStrategy {
             "octahedron-furthest" => Ok(Self::OctahedronFurthest),
             "naive-mix" => Ok(Self::NaiveMix),
             "naive-dominant" => Ok(Self::NaiveDominant),
-            "grayscale" => Ok(Self::Grayscale(0.25)),
-            _ if s.starts_with("grayscale:") => {
-                let v_str = &s["grayscale:".len()..];
-                let v = v_str.parse::<f32>().map_err(|_| {
-                    format!(
-                        "invalid value `{s}`: expected `grayscale:<spread>` with spread a number in [0, 1]"
-                    )
-                })?;
-                if !(0.0..=1.0).contains(&v) {
-                    return Err(format!("invalid spread `{v}`: must be in [0, 1]"));
-                }
-                Ok(Self::Grayscale(v))
-            }
+            "grayscale" => Ok(Self::Grayscale),
+            _ if s.starts_with("gray-pure-spread:") => Ok(Self::GrayPureSpread(
+                parse_unit_interval(s, "gray-pure-spread:")?,
+            )),
+            _ if s.starts_with("gray-offset-blend:") => Ok(Self::GrayOffsetBlend(
+                parse_unit_interval(s, "gray-offset-blend:")?,
+            )),
             _ => Err(format!(
                 "invalid value `{s}` for `--strategy`\n\n{}",
                 Self::LONG_HELP
@@ -216,6 +230,32 @@ enum SpectraColors {
 fn color_to_point(color: Rgb<f32>) -> Point3<f32> {
     let [r, g, b] = color.0;
     Point3::new(r, g, b)
+}
+
+/// Validate that every entry of a dither-palette is achromatic (r == g == b)
+/// and that the resulting brightness levels are strictly ascending, then
+/// return the levels. The output palette index has to align with the
+/// `dither_palette` order, so we require sorted input rather than sorting
+/// internally.
+fn grayscale_levels(palette: &[Point3<f32>]) -> Vec<f32> {
+    let levels: Vec<f32> = palette
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            if !(p.x == p.y && p.y == p.z) {
+                panic!(
+                    "grayscale strategy requires r == g == b for every dither-palette entry; entry {i} = {p:?} is not achromatic"
+                );
+            }
+            p.x
+        })
+        .collect();
+    for w in levels.windows(2) {
+        if w[0] >= w[1] {
+            panic!("grayscale dither-palette must be sorted strictly ascending by brightness");
+        }
+    }
+    levels
 }
 
 /// BT.709 luma (perceptually-weighted brightness) applied directly in sRGB
@@ -334,31 +374,18 @@ fn main() {
                 true,
             );
         }
-        DecomposeStrategy::Grayscale(spread_ratio) => {
-            // Validate r == g == b for every dither-palette entry and that the
-            // resulting brightness levels are strictly ascending. The output
-            // palette index has to align with `dither_palette` order, so we
-            // require sorted input rather than sorting internally.
-            let levels: Vec<f32> = dither_palette_as_points
-                .iter()
-                .enumerate()
-                .map(|(i, p)| {
-                    if !(p.x == p.y && p.y == p.z) {
-                        panic!(
-                            "grayscale strategy requires r == g == b for every dither-palette entry; entry {i} = {p:?} is not achromatic"
-                        );
-                    }
-                    p.x
-                })
-                .collect();
-            for w in levels.windows(2) {
-                if w[0] >= w[1] {
-                    panic!(
-                        "grayscale dither-palette must be sorted strictly ascending by brightness"
-                    );
-                }
-            }
-            let decomposer = GrayDecomposer::new(levels)
+        DecomposeStrategy::Grayscale | DecomposeStrategy::GrayPureSpread(_) => {
+            // Spread ratio: 0 for the no-spread `Grayscale` form, the supplied
+            // r for `gray-pure-spread:<r>`. Any of the gray decomposers would
+            // produce identical output at spread = 0; route through
+            // `PureSpreadGrayDecomposer` for now.
+            let spread_ratio = match args.strategy {
+                DecomposeStrategy::Grayscale => 0.0,
+                DecomposeStrategy::GrayPureSpread(r) => r,
+                _ => unreachable!(),
+            };
+            let levels = grayscale_levels(&dither_palette_as_points);
+            let decomposer = PureSpreadGrayDecomposer::new(levels)
                 .unwrap()
                 .with_spread_ratio(spread_ratio);
             epd_dither::dither::diffuse::diffuse_dither(
@@ -367,6 +394,9 @@ fn main() {
                 &mut inout,
                 true,
             );
+        }
+        DecomposeStrategy::GrayOffsetBlend(_) => {
+            panic!("gray-offset-blend strategy is not yet implemented");
         }
     }
     let mut output = png::Encoder::new(
