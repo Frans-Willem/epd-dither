@@ -1,3 +1,31 @@
+/// Naive 6-colour primaries-and-secondaries palette (black, white, yellow,
+/// red, blue, green — order matches the reterminal e1002 driver).
+///
+/// Structurally a regular convex octahedron — three antipodal pairs
+/// (K↔W, Y↔B, R↔G) sharing the centroid (0.5, 0.5, 0.5) — so it's a valid
+/// palette for [`OctahedronDecomposer`]. Useful as a sanity-check / untuned
+/// reference; not measured.
+pub const NAIVE_RGB6: [[u8; 3]; 6] = [
+    [0, 0, 0],
+    [255, 255, 255],
+    [255, 255, 0],
+    [255, 0, 0],
+    [0, 0, 255],
+    [0, 255, 0],
+];
+
+/// 6-colour palette for the Spectra 6 e-paper panel (sRGB), in the order used
+/// by the reterminal e1002 driver. Placeholder values pending i1Pro
+/// recalibration; see TODO.md.
+pub const SPECTRA6: [[u8; 3]; 6] = [
+    [58, 0, 66],
+    [179, 208, 200],
+    [215, 233, 0],
+    [151, 38, 44],
+    [61, 38, 152],
+    [96, 104, 86],
+];
+
 use crate::barycentric::octahedron::OctahedronProjector;
 use nalgebra::base::{Scalar, Vector3, Vector6};
 use nalgebra::geometry::Point3;

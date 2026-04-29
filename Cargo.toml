@@ -11,6 +11,12 @@ with-binaries = [
 	"rand",
 ]
 clap = ["dep:clap"]
+image = ["dep:image"]
+rand = ["dep:rand"]
+
+[[bin]]
+name = "dither"
+required-features = ["with-binaries"]
 
 [dependencies]
 clap = { version = "4.5.55", optional = true, features = ["derive"] }
