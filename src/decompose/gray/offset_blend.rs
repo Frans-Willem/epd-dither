@@ -4,25 +4,26 @@ use core::ops::{Add, AddAssign, Div, Mul, Sub};
 use num_traits::{One, Zero};
 
 /// Decomposes a scalar into per-level weights for a 1D palette by linearly
-/// interpolating between the bracket decompositions of `input - offset` and
-/// `input + offset`, choosing the interpolation factor so the combined mean
-/// lands back at `input`.
+/// interpolating between the bracket decompositions of `input - distance/2`
+/// and `input + distance/2`, choosing the interpolation factor so the
+/// combined mean lands back at `input`.
 ///
 /// Each bracket decomposition `B(x)` is mean-preserving — its weights yield
 /// effective mean `E(x) = x` for `x` in `[levels[0], levels[last]]`, or
 /// clamp to the nearest edge level otherwise. The output is
-/// `ratio_lower_br · B(input-offset) + ratio_upper_br · B(input+offset)`
+/// `ratio_lower_br · B(input - distance/2) + ratio_upper_br · B(input + distance/2)`
 /// with `ratio_lower_br + ratio_upper_br = 1` and the two ratios chosen to
 /// satisfy `ratio_lower_br · E_lower + ratio_upper_br · E_upper = input`.
 /// So the combined mean equals `input` exactly whenever `input` itself is
-/// in range, even if one of `input ± offset` was clamped. Inputs outside
-/// the palette range collapse onto the nearest edge level — same edge
-/// behaviour as [`super::PureSpreadGrayDecomposer`].
+/// in range, even if one of the two sample points was clamped. Inputs
+/// outside the palette range collapse onto the nearest edge level — same
+/// edge behaviour as [`super::PureSpreadGrayDecomposer`].
 ///
 /// Compared to PureSpread, this spreads dither weight across up to four
 /// adjacent levels (vs. three) and the spread peaks symmetrically around
-/// each level rather than asymmetrically with mean preservation. `offset` is
-/// in input-space units; caller is responsible for clamping.
+/// each level rather than asymmetrically with mean preservation. `distance`
+/// is the input-space separation between the two sample points; caller is
+/// responsible for clamping.
 ///
 /// Levels are supplied sorted strictly ascending. `L` is the levels storage;
 /// any `AsRef<[T]>` works (`Vec<T>`, `[T; N]`, `&[T]`,
@@ -30,7 +31,7 @@ use num_traits::{One, Zero};
 /// allocator.
 pub struct OffsetBlendGrayDecomposer<L, T> {
     levels: L,
-    offset: T,
+    distance: T,
 }
 
 impl<L, T> OffsetBlendGrayDecomposer<L, T>
@@ -54,17 +55,17 @@ where
         }
         Some(Self {
             levels,
-            offset: T::zero(),
+            distance: T::zero(),
         })
     }
 }
 
 impl<L, T> OffsetBlendGrayDecomposer<L, T> {
-    /// Set the offset used by
+    /// Set the distance between the two sample points used by
     /// [`Decomposer::decompose_into`](super::super::Decomposer::decompose_into).
     /// Caller is responsible for clamping to the input-space range.
-    pub fn with_offset(mut self, offset: T) -> Self {
-        self.offset = offset;
+    pub fn with_distance(mut self, distance: T) -> Self {
+        self.distance = distance;
         self
     }
 }
@@ -88,17 +89,20 @@ where
         }
         let levels = self.levels.as_ref();
 
-        // Quick out: in case of no offset or if the input is outside the
-        // levels, just collapse to the single bracket case.
+        // Quick out: in case of zero distance or if the input is outside
+        // the levels, just collapse to the single bracket case.
         let input_br = bracket(levels, input);
-        if self.offset <= T::zero() || input_br.left == input_br.right {
+        if self.distance <= T::zero() || input_br.left == input_br.right {
             out[input_br.left] += input_br.ratio_left;
             out[input_br.right] += input_br.ratio_right;
             return;
         }
 
-        let lower_br = bracket(levels, &(input.clone() - self.offset.clone()));
-        let upper_br = bracket(levels, &(input.clone() + self.offset.clone()));
+        // Sample points are placed symmetrically around `input` so they're
+        // exactly `distance` apart in input space.
+        let offset = self.distance.clone() / (T::one() + T::one());
+        let lower_br = bracket(levels, &(input.clone() - offset.clone()));
+        let upper_br = bracket(levels, &(input.clone() + offset));
 
         // Pick `ratio_lower_br` so that
         //   ratio_lower_br · E_lower + ratio_upper_br · E_upper = input,

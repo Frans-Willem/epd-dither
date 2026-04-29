@@ -396,11 +396,11 @@ fn main() {
                 true,
             );
         }
-        DecomposeStrategy::GrayOffsetBlend(offset) => {
+        DecomposeStrategy::GrayOffsetBlend(distance) => {
             let levels = grayscale_levels(&dither_palette_as_points);
             let decomposer = OffsetBlendGrayDecomposer::new(levels)
                 .unwrap()
-                .with_offset(offset);
+                .with_distance(distance);
             epd_dither::dither::diffuse::diffuse_dither(
                 DecomposingDitherStrategy::new(decomposer, rgb_to_brightness),
                 matrix,
