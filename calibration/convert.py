@@ -4,13 +4,40 @@ or more viewing illuminants.
 
 Reads <calib_dir>/metadata.json to find the patch labels and rep count,
 parses each `<label>_<n>.sp` file, averages the per-rep reflectance
-spectra, and computes:
+spectra, and emits five palette variants per illuminant:
 
-  - XYZ under the chosen illuminant + CIE 1931 2° observer
-  - L*a*b* (referenced to the same illuminant)
-  - sRGB 8-bit (chromatic adaptation: source illuminant → D65, Bradford)
+  - absolute: panel-XYZ → sRGB with chromatic adaptation source-illuminant→D65.
+    Patches retain their measured absolute luminance; panel white lands well
+    below #FFFFFF (e.g. L*≈62) and panel black well above #000000.
 
-Output: per-illuminant table on stdout, plus an HTML report with swatches
+  - panel-adapted: Bradford CAT panel-white-XYZ → D65, then encode as sRGB.
+    Panel white is mapped onto sRGB white (#FFFFFF). All other patches shift
+    in lockstep so chromaticities are preserved relative to panel white.
+
+  - symmetric: uniform Y scale (no CAT). Multiply every patch's XYZ by a
+    factor f chosen so that L*(panel-white) + L*(panel-black) = 100. Equal
+    headroom on both sides: panel white sits below #FFFFFF by the same amount
+    panel black sits above #000000. Panel chromaticity (slight blue cast of
+    panel-white, etc.) is preserved exactly — no pretending the panel is
+    neutral, which matters because the white bezel around the panel keeps the
+    eye from fully adapting to panel-white.
+
+  - stretched: uniform Y scale (no CAT). Multiply every patch's XYZ by
+    f = 100 / Y_w so panel-white reaches L*=100, but with panel-white's
+    measured chromaticity preserved (slight blue cast intact). Panel-black
+    lands at L*≈34, same as panel-adapted, just without the CAT step.
+    Same-intent counterpart to panel-adapted for users who don't want to
+    pretend the panel is neutral.
+
+  - expanded: α-clipped black-point compensation followed by L*-symmetric
+    scaling. α = max value such that XYZ_p − α·XYZ_black ≥ 0 component-wise
+    across every patch (typically capped by the warmest patch's Z, since
+    panel-black is bluish). After subtraction, f is chosen so that
+    L*(panel-white) + L*(panel-black) = 100 — same perceptual symmetry as
+    the `symmetric` mode but applied to BPC-shifted XYZ, so panel-black
+    actually lands closer to L*=0 than `symmetric` achieves on its own.
+
+Output: per-illuminant tables on stdout, plus an HTML report with swatches
 and per-patch reflectance plots written to <calib_dir>/report.html.
 """
 import argparse
@@ -35,6 +62,43 @@ warnings.filterwarnings("ignore", category=colour.utilities.ColourRuntimeWarning
 warnings.filterwarnings("ignore", category=colour.utilities.ColourUsageWarning)
 
 
+MODES = ("absolute", "panel-adapted", "symmetric", "stretched", "expanded")
+
+
+MODE_DESCRIPTIONS = {
+    "absolute": (
+        "Source illuminant → D65 via Bradford CAT. Patches keep their measured "
+        "absolute luminance — panel white encodes below #FFFFFF, panel black "
+        "above #000000."
+    ),
+    "panel-adapted": (
+        "Bradford CAT panel-white → D65, then encode as sRGB with D65 reference. "
+        "Panel white maps onto sRGB white; chromaticities relative to panel "
+        "white are preserved."
+    ),
+    "symmetric": (
+        "Uniform Y scale (no chromatic adaptation). Each patch's XYZ is "
+        "multiplied by f, with f chosen so panel-white and panel-black are "
+        "equidistant from L*=100 and L*=0. Panel chromaticity is preserved — "
+        "panel-white retains its measured slight blue cast rather than being "
+        "remapped to a neutral gray."
+    ),
+    "stretched": (
+        "Uniform Y scale (no chromatic adaptation). Each patch's XYZ is "
+        "multiplied by f = 100/Y_w so panel-white reaches L*=100. Panel "
+        "chromaticity is preserved — panel-white's slight blue cast is "
+        "retained at maximum lightness rather than being neutralised by CAT."
+    ),
+    "expanded": (
+        "α-clipped BPC + L*-symmetric scaling. α subtracts as much "
+        "panel-black-XYZ as possible without driving any patch component "
+        "negative (typically limited by the warmest patch's Z), then f is "
+        "chosen so panel-white-L* + panel-black-L* = 100. Combines "
+        "black-point darkening with perceptual symmetry."
+    ),
+}
+
+
 @dataclass
 class Patch:
     label: str
@@ -51,6 +115,13 @@ class PatchResult:
     XYZ: np.ndarray
     Lab: np.ndarray
     rgb: tuple[int, int, int]
+
+
+@dataclass
+class ModeResult:
+    mode: str
+    results: list[PatchResult]
+    k: float | None = None  # only set for "symmetric"
 
 
 def parse_sp(path: Path) -> tuple[np.ndarray, np.ndarray]:
@@ -92,13 +163,102 @@ def xyz_to_srgb_u8(
     return tuple(int(round(float(c) * 255)) for c in rgb)
 
 
-def compute_under(
-    patch: Patch, ill_sd, cmfs, ill_xy
-) -> PatchResult:
-    XYZ = colour.sd_to_XYZ(patch.sd, cmfs, ill_sd, method="Integration")
-    rgb = xyz_to_srgb_u8(XYZ, ill_xy)
-    Lab = np.asarray(colour.XYZ_to_Lab(XYZ / 100, ill_xy))
-    return PatchResult(patch.label, np.asarray(XYZ), Lab, rgb)
+def integrate_xyz(patch: Patch, ill_sd, cmfs) -> np.ndarray:
+    """Spectral integration → XYZ in the 0–100 scale (Y of perfect reflector = 100)."""
+    return np.asarray(colour.sd_to_XYZ(patch.sd, cmfs, ill_sd, method="Integration"))
+
+
+def symmetric_y_scale(
+    panel_white_Y_0_100: float, panel_black_Y_0_100: float
+) -> float:
+    """Returns the XYZ multiplier f such that L*(Y_w·f) + L*(Y_k·f) = 100,
+    where Y values are in the 0–100 scale (perfect reflector Y=100). The
+    L* formula uses Yn=100. This Y-only scaling preserves the panel's
+    measured chromaticity in the output (no chromatic adaptation)."""
+    sum_cbrt = panel_white_Y_0_100 ** (1 / 3) + panel_black_Y_0_100 ** (1 / 3)
+    return float(100 * (132 / 116) ** 3 / sum_cbrt ** 3)
+
+
+def compute_palette(
+    patches: list[Patch],
+    mode: str,
+    ill_sd,
+    ill_xy: np.ndarray,
+    cmfs,
+    d65_xy: np.ndarray,
+    panel_white_XYZ: np.ndarray,
+    panel_black_XYZ: np.ndarray,
+) -> ModeResult:
+    if mode == "absolute":
+        results = []
+        for patch in patches:
+            XYZ = integrate_xyz(patch, ill_sd, cmfs)
+            results.append(PatchResult(
+                patch.label,
+                XYZ,
+                np.asarray(colour.XYZ_to_Lab(XYZ / 100, ill_xy)),
+                xyz_to_srgb_u8(XYZ, ill_xy),
+            ))
+        return ModeResult(mode, results)
+
+    if mode == "panel-adapted":
+        d65_XYZ_100 = np.asarray(colour.xy_to_XYZ(d65_xy)) * 100
+        results = []
+        for patch in patches:
+            XYZ_abs = integrate_xyz(patch, ill_sd, cmfs)
+            XYZ_adapted = np.asarray(
+                colour.chromatic_adaptation(
+                    XYZ_abs, panel_white_XYZ, d65_XYZ_100, transform="Bradford"
+                )
+            )
+            results.append(PatchResult(
+                patch.label,
+                XYZ_adapted,
+                np.asarray(colour.XYZ_to_Lab(XYZ_adapted / 100, d65_xy)),
+                xyz_to_srgb_u8(XYZ_adapted, d65_xy),
+            ))
+        return ModeResult(mode, results)
+
+    if mode in ("symmetric", "stretched"):
+        if mode == "symmetric":
+            f = symmetric_y_scale(panel_white_XYZ[1], panel_black_XYZ[1])
+        else:
+            f = 100.0 / float(panel_white_XYZ[1])
+        results = []
+        for patch in patches:
+            XYZ_scaled = integrate_xyz(patch, ill_sd, cmfs) * f
+            results.append(PatchResult(
+                patch.label,
+                XYZ_scaled,
+                np.asarray(colour.XYZ_to_Lab(XYZ_scaled / 100, ill_xy)),
+                xyz_to_srgb_u8(XYZ_scaled, ill_xy),
+            ))
+        return ModeResult(mode, results, k=f)
+
+    if mode == "expanded":
+        all_xyz = [integrate_xyz(patch, ill_sd, cmfs) for patch in patches]
+        # α_max: largest α with XYZ_p − α·XYZ_black ≥ 0 across every
+        # (patch, component). Components of XYZ_black at zero (won't happen
+        # for real measurements but be safe) drop out of the constraint.
+        denom = np.where(panel_black_XYZ > 0, panel_black_XYZ, np.inf)
+        alpha = float(np.min(np.stack(all_xyz) / denom))
+        # f chosen so L*(Y_w_after·f) + L*(Y_k_after·f) = 100, same equation
+        # as `symmetric` but applied to the post-subtraction Y values.
+        Y_w_after = float(panel_white_XYZ[1] - alpha * panel_black_XYZ[1])
+        Y_k_after = float((1.0 - alpha) * panel_black_XYZ[1])
+        f = symmetric_y_scale(Y_w_after, Y_k_after)
+        results = []
+        for patch, XYZ_abs in zip(patches, all_xyz):
+            XYZ_new = np.maximum((XYZ_abs - alpha * panel_black_XYZ) * f, 0.0)
+            results.append(PatchResult(
+                patch.label,
+                XYZ_new,
+                np.asarray(colour.XYZ_to_Lab(XYZ_new / 100, ill_xy)),
+                xyz_to_srgb_u8(XYZ_new, ill_xy),
+            ))
+        return ModeResult(mode, results, k=alpha)
+
+    raise ValueError(f"unknown mode {mode!r}")
 
 
 def relative_luminance(rgb: tuple[int, int, int]) -> float:
@@ -122,7 +282,6 @@ def spectrum_svg(
         y = (height - pad) - r / rmax * (height - 2 * pad)
         pts.append(f"{x:.1f},{y:.1f}")
     path = " ".join(pts)
-    # tick marks at 400, 500, 600, 700 nm
     ticks = []
     for nm in (400, 500, 600, 700):
         x = pad + (nm - wmin) / (wmax - wmin) * (width - 2 * pad)
@@ -130,7 +289,6 @@ def spectrum_svg(
             f'<line x1="{x:.1f}" y1="{height-pad}" x2="{x:.1f}" y2="{height-pad+2}" stroke="#888"/>'
             f'<text x="{x:.1f}" y="{height-pad+11}" font-size="8" text-anchor="middle" fill="#666">{nm}</text>'
         )
-    # 50% grid line
     y50 = (height - pad) - 0.5 * (height - 2 * pad)
     return (
         f'<svg width="{width}" height="{height + 12}" '
@@ -142,11 +300,33 @@ def spectrum_svg(
     )
 
 
+def _rust_block(ill_name: str, mode: str, mr: ModeResult) -> str:
+    suffix_map = {
+        "absolute": "",
+        "panel-adapted": "_PANEL_ADAPTED",
+        "symmetric": "_SYMMETRIC",
+        "stretched": "_STRETCHED",
+        "expanded": "_EXPANDED",
+    }
+    name = f"SPECTRA6_{ill_name}{suffix_map[mode]}"
+    sym = "α" if mode == "expanded" else "f"
+    extra = f" ({sym}={mr.k:.4f})" if mr.k is not None else ""
+    lines = [
+        f"// Spectra 6, illuminant {ill_name}, mode={mode}{extra}.",
+        f"pub const {name}: [[u8; 3]; {len(mr.results)}] = [",
+    ]
+    for res in mr.results:
+        r, g, b = res.rgb
+        lines.append(f"    [{r:>3}, {g:>3}, {b:>3}], // {res.label}")
+    lines.append("];")
+    return "\n".join(lines)
+
+
 def render_html(
     calib_dir: Path,
     metadata: dict,
     patches: list[Patch],
-    by_illuminant: dict[str, list[PatchResult]],
+    by_illuminant: dict[str, dict[str, ModeResult]],
 ) -> str:
     started = metadata.get("started", "?")
     note = metadata.get("note", "") or ""
@@ -154,38 +334,53 @@ def render_html(
     instr_str = " · ".join(f"{k}: {v}" for k, v in instr.items()) or "(no instrument metadata)"
 
     illuminant_sections = []
-    for ill_name, results in by_illuminant.items():
-        cards = []
-        for patch, res in zip(patches, results):
-            r, g, b = res.rgb
-            hex6 = f"#{r:02x}{g:02x}{b:02x}"
-            text_color = "#fff" if relative_luminance(res.rgb) < 0.5 else "#111"
-            mean_std = float(patch.std_refl.mean())
-            sigma_pct = mean_std * 100
-            svg = spectrum_svg(patch)
-            cards.append(f"""
-                <div class="card">
-                  <div class="swatch" style="background:{hex6};color:{text_color}">
-                    <div class="label">{html.escape(patch.label)}</div>
-                    <div class="hex">{hex6}</div>
-                  </div>
-                  <table class="meta">
-                    <tr><th>sRGB</th><td>({r}, {g}, {b})</td></tr>
-                    <tr><th>L* a* b*</th><td>({res.Lab[0]:.2f}, {res.Lab[1]:.2f}, {res.Lab[2]:.2f})</td></tr>
-                    <tr><th>XYZ</th><td>({res.XYZ[0]:.3f}, {res.XYZ[1]:.3f}, {res.XYZ[2]:.3f})</td></tr>
-                    <tr><th>within-rep σ</th><td>{sigma_pct:.3f}% over {patch.nreps} reads</td></tr>
-                  </table>
-                  <div class="spectrum">{svg}</div>
-                </div>
+    for ill_name, modes in by_illuminant.items():
+        mode_blocks = []
+        for mode, mr in modes.items():
+            cards = []
+            for patch, res in zip(patches, mr.results):
+                r, g, b = res.rgb
+                hex6 = f"#{r:02x}{g:02x}{b:02x}"
+                text_color = "#fff" if relative_luminance(res.rgb) < 0.5 else "#111"
+                mean_std = float(patch.std_refl.mean())
+                sigma_pct = mean_std * 100
+                svg = spectrum_svg(patch)
+                cards.append(f"""
+                    <div class="card">
+                      <div class="swatch" style="background:{hex6};color:{text_color}">
+                        <div class="label">{html.escape(patch.label)}</div>
+                        <div class="hex">{hex6}</div>
+                      </div>
+                      <table class="meta">
+                        <tr><th>sRGB</th><td>({r}, {g}, {b})</td></tr>
+                        <tr><th>L* a* b*</th><td>({res.Lab[0]:.2f}, {res.Lab[1]:.2f}, {res.Lab[2]:.2f})</td></tr>
+                        <tr><th>XYZ</th><td>({res.XYZ[0]:.3f}, {res.XYZ[1]:.3f}, {res.XYZ[2]:.3f})</td></tr>
+                        <tr><th>within-rep σ</th><td>{sigma_pct:.3f}% over {patch.nreps} reads</td></tr>
+                      </table>
+                      <div class="spectrum">{svg}</div>
+                    </div>
+                """)
+            rust = _rust_block(ill_name, mode, mr)
+            extra = ""
+            if mr.k is not None:
+                Ls = [r.Lab[0] for r in mr.results]
+                sym = "α" if mode == "expanded" else "f"
+                extra = (
+                    f' <span class="k">{sym}={mr.k:.4f} · '
+                    f'panel-white L*={max(Ls):.1f} · '
+                    f'panel-black L*={min(Ls):.1f}</span>'
+                )
+            mode_blocks.append(f"""
+                <h3>Mode: {html.escape(mode)}{extra}</h3>
+                <p class="note">{html.escape(MODE_DESCRIPTIONS[mode])}</p>
+                <div class="grid">{''.join(cards)}</div>
+                <pre class="rust"><code>{html.escape(rust)}</code></pre>
             """)
-        rust = _rust_block(ill_name, results)
         illuminant_sections.append(f"""
             <section>
               <h2>Illuminant {html.escape(ill_name)}</h2>
-              <p class="note">CIE 1931 2° observer, sRGB via Bradford CAT to D65,
-              integration on the as-measured spectral grid. Lab is referenced to the same illuminant.</p>
-              <div class="grid">{''.join(cards)}</div>
-              <pre class="rust"><code>{html.escape(rust)}</code></pre>
+              <p class="note">CIE 1931 2° observer, integration on the as-measured spectral grid.</p>
+              {''.join(mode_blocks)}
             </section>
         """)
 
@@ -198,6 +393,8 @@ def render_html(
   body {{ font-family: system-ui, sans-serif; margin: 2em; max-width: 1400px; color: #111; }}
   h1 {{ font-weight: 500; margin-bottom: 0.2em; }}
   h2 {{ font-weight: 500; margin-top: 2em; border-bottom: 1px solid #ddd; padding-bottom: 0.3em; }}
+  h3 {{ font-weight: 500; margin-top: 1.5em; }}
+  h3 .k {{ font-size: 0.7em; color: #666; font-weight: normal; }}
   .meta-block {{ color: #555; font-size: 0.9em; line-height: 1.5; }}
   .grid {{ display: flex; flex-wrap: wrap; gap: 1em; margin-top: 1em; }}
   .card {{ width: 340px; border: 1px solid #ddd; padding: 0.6em; border-radius: 4px; background: #fafafa; }}
@@ -229,16 +426,12 @@ def render_html(
 """
 
 
-def _rust_block(ill_name: str, results: list[PatchResult]) -> str:
-    lines = [
-        f"// Spectra 6, viewing illuminant {ill_name}, CIE 1931 2°.",
-        f"pub const SPECTRA6_{ill_name}: [[u8; 3]; {len(results)}] = [",
-    ]
-    for res in results:
-        r, g, b = res.rgb
-        lines.append(f"    [{r:>3}, {g:>3}, {b:>3}], // {res.label}")
-    lines.append("];")
-    return "\n".join(lines)
+def find_white_black(patches: list[Patch], ill_sd, cmfs) -> tuple[np.ndarray, np.ndarray]:
+    """Identify the panel's white and black patches by max/min Y under the
+    integration illuminant. Returns (panel_white_XYZ, panel_black_XYZ)."""
+    Ys = [(integrate_xyz(p, ill_sd, cmfs), p.label) for p in patches]
+    Ys_sorted = sorted(enumerate(Ys), key=lambda iy: iy[1][0][1])
+    return Ys_sorted[-1][1][0], Ys_sorted[0][1][0]
 
 
 def main() -> int:
@@ -272,42 +465,50 @@ def main() -> int:
 
     cmfs = colour.MSDS_CMFS["CIE 1931 2 Degree Standard Observer"]
     chromaticities = colour.CCS_ILLUMINANTS["CIE 1931 2 Degree Standard Observer"]
+    d65_xy = chromaticities["D65"]
 
-    by_illuminant: dict[str, list[PatchResult]] = {}
+    by_illuminant: dict[str, dict[str, ModeResult]] = {}
     for ill_name in args.illuminants:
         try:
             ill_sd = colour.SDS_ILLUMINANTS[ill_name]
             ill_xy = chromaticities[ill_name]
         except KeyError:
             sys.exit(f"unknown illuminant {ill_name!r}")
-        by_illuminant[ill_name] = [
-            compute_under(p, ill_sd, cmfs, ill_xy) for p in patches
-        ]
-
-    for ill_name, results in by_illuminant.items():
-        print(
-            f"== Illuminant {ill_name} (CIE 1931 2°, "
-            f"sRGB via Bradford CAT to D65) =="
-        )
-        print(
-            f"  {'label':<8} {'sRGB':<18} {'hex':<9} "
-            f"{'Lab':<24} {'mean σ':<8} reps"
-        )
-        for patch, res in zip(patches, results):
-            r, g, b = res.rgb
-            mean_std = float(patch.std_refl.mean())
-            print(
-                f"  {patch.label:<8} ({r:>3}, {g:>3}, {b:>3})    "
-                f"#{r:02x}{g:02x}{b:02x}   "
-                f"({res.Lab[0]:6.2f}, {res.Lab[1]:6.2f}, {res.Lab[2]:6.2f})    "
-                f"{mean_std:.4f}   {patch.nreps}"
+        panel_white_XYZ, panel_black_XYZ = find_white_black(patches, ill_sd, cmfs)
+        by_illuminant[ill_name] = {
+            mode: compute_palette(
+                patches, mode, ill_sd, ill_xy, cmfs,
+                d65_xy, panel_white_XYZ, panel_black_XYZ,
             )
-        print()
+            for mode in MODES
+        }
+
+    for ill_name, modes in by_illuminant.items():
+        print(f"== Illuminant {ill_name} (CIE 1931 2°) ==")
+        for mode, mr in modes.items():
+            sym = "α" if mode == "expanded" else "f"
+            extra = f"  [{sym}={mr.k:.4f}]" if mr.k is not None else ""
+            print(f"-- {mode}{extra} --")
+            print(
+                f"  {'label':<8} {'sRGB':<18} {'hex':<9} "
+                f"{'Lab':<24} {'mean σ':<8} reps"
+            )
+            for patch, res in zip(patches, mr.results):
+                r, g, b = res.rgb
+                mean_std = float(patch.std_refl.mean())
+                print(
+                    f"  {patch.label:<8} ({r:>3}, {g:>3}, {b:>3})    "
+                    f"#{r:02x}{g:02x}{b:02x}   "
+                    f"({res.Lab[0]:6.2f}, {res.Lab[1]:6.2f}, {res.Lab[2]:6.2f})    "
+                    f"{mean_std:.4f}   {patch.nreps}"
+                )
+            print()
 
     print("== Rust ==")
-    for ill_name, results in by_illuminant.items():
-        print(_rust_block(ill_name, results))
-        print()
+    for ill_name, modes in by_illuminant.items():
+        for mode, mr in modes.items():
+            print(_rust_block(ill_name, mode, mr))
+            print()
 
     html_path = args.html
     if html_path is None:
