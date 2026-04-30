@@ -24,3 +24,7 @@ Examples
 
 Note:
 epdoptimize was used with the default parameters, but with the same color palette as in this library. The epdoptimize color palette can not be used with this library as it does not form a regular octahedron.
+
+Further reading
+---------------
+- [Decomposition methods and picking strategies](./documentation/decomposition.md) — what each `Decomposer` does, when it applies, and how the strategies trade off when more than one valid decomposition exists.
