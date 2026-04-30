@@ -8,12 +8,6 @@ The README/documentation images predate the naive-decomposer rework. Regenerate 
 ### Compare noise sources
 Document the differences between white noise, Bayer matrices, interleaved gradient noise, and blue noise — when each is preferable and what artefacts each introduces.
 
-### Document decomposition methods
-Walk through what each `Decomposer` does and when it applies (octahedral palettes vs. general convex hulls via the naive decomposer vs. 1-D grayscale).
-
-### Discuss decomposition multiplicity
-Over a 4-colour palette most input colours have at least three valid barycentric decompositions; over 5+ colours there are infinitely many. Explain the picking strategies (`FavorMix`, `FavorDominant`, the octahedral axis selection) and what they trade off.
-
 ## Code
 
 ### dither-rgb vs dither-decompose
@@ -21,9 +15,6 @@ Allow Floyd-Steinberg (and other diffusion methods) to operate either on the raw
 
 ### no-alloc N-channel naive decomposer
 Add `NaiveDecomposerN<T, const MAX: usize>` alongside the alloc-required `NaiveDecomposer`. Deferred during initial `Decomposer`-trait design until the gray decomposer landed; unblocked now.
-
-### Smooth tetrahedron blending in NaiveDecomposer
-Banding still exists on Spectra 6 in principle: `FavorMix` / `FavorDominant` make a hard discrete choice per pixel, so on a smooth gradient the picked tetrahedron can flip across a tetra-boundary and produce a visible seam even though both decompositions are mean-correct. Research a strategy that gradually blends weights across multiple containing tetrahedra (analogous in spirit to `OffsetBlendGrayDecomposer`'s mean-preserving blend between two bracket decompositions) so the transition is continuous in input-space rather than piecewise-constant.
 
 ## Measurement
 
