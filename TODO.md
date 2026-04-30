@@ -22,6 +22,9 @@ Allow Floyd-Steinberg (and other diffusion methods) to operate either on the raw
 ### no-alloc N-channel naive decomposer
 Add `NaiveDecomposerN<T, const MAX: usize>` alongside the alloc-required `NaiveDecomposer`. Deferred during initial `Decomposer`-trait design until the gray decomposer landed; unblocked now.
 
+### Smooth tetrahedron blending in NaiveDecomposer
+Banding still exists on Spectra 6 in principle: `FavorMix` / `FavorDominant` make a hard discrete choice per pixel, so on a smooth gradient the picked tetrahedron can flip across a tetra-boundary and produce a visible seam even though both decompositions are mean-correct. Research a strategy that gradually blends weights across multiple containing tetrahedra (analogous in spirit to `OffsetBlendGrayDecomposer`'s mean-preserving blend between two bracket decompositions) so the transition is continuous in input-space rather than piecewise-constant.
+
 ## Measurement
 
 ### Recalibrate Spectra 6 / Epdoptimize
