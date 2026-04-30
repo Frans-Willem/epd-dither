@@ -8,6 +8,11 @@ The README/documentation images predate the naive-decomposer rework. Regenerate 
 ### Compare noise sources
 Document the differences between white noise, Bayer matrices, interleaved gradient noise, and blue noise — when each is preferable and what artefacts each introduces.
 
+## Code
+
+### Audit dither.rs vs library boundary against epd-photoframe-server
+Now that `epd-photoframe-server` (sibling crate) consumes `epd-dither` as a library, walk through `src/bin/dither.rs` and identify functionality that's currently CLI-private but would be useful as library API. Likely candidates: parsing decomposition strategies from strings (the `DecomposeStrategy` enum and its `value_enum` plumbing), RGB → brightness/luminance helpers, anything else duplicated between the two crates. Move what makes sense up into `epd-dither` and reduce duplication.
+
 ## Measurement
 
 ### Measure E1001 4-level grayscale
