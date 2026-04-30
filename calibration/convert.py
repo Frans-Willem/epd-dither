@@ -4,38 +4,26 @@ or more viewing illuminants.
 
 Reads <calib_dir>/metadata.json to find the patch labels and rep count,
 parses each `<label>_<n>.sp` file, averages the per-rep reflectance
-spectra, and emits five palette variants per illuminant:
+spectra, and emits seven palette variants per illuminant:
 
   - absolute: panel-XYZ → sRGB with chromatic adaptation source-illuminant→D65.
     Patches retain their measured absolute luminance; panel white lands well
     below #FFFFFF (e.g. L*≈62) and panel black well above #000000.
 
-  - panel-adapted: Bradford CAT panel-white-XYZ → D65, then encode as sRGB.
-    Panel white is mapped onto sRGB white (#FFFFFF). All other patches shift
-    in lockstep so chromaticities are preserved relative to panel white.
+  - adjusted: α-clipped black-point compensation followed by L*-symmetric
+    scaling. α = α_max (largest α with XYZ_p − α·XYZ_black ≥ 0 component-
+    wise across every patch — typically capped by the warmest patch's Z,
+    since panel-black is bluish). The only mode in this list that performs
+    purely non-lossy transformations: BPC subtraction without clipping plus
+    L*-symmetric Y scaling. f is chosen so L*(panel-white) + L*(panel-black)
+    = 100.
 
-  - symmetric: uniform Y scale (no CAT). Multiply every patch's XYZ by a
-    factor f chosen so that L*(panel-white) + L*(panel-black) = 100. Equal
-    headroom on both sides: panel white sits below #FFFFFF by the same amount
-    panel black sits above #000000. Panel chromaticity (slight blue cast of
-    panel-white, etc.) is preserved exactly — no pretending the panel is
-    neutral, which matters because the white bezel around the panel keeps the
-    eye from fully adapting to panel-white.
-
-  - stretched: uniform Y scale (no CAT). Multiply every patch's XYZ by
-    f = 100 / Y_w so panel-white reaches L*=100, but with panel-white's
-    measured chromaticity preserved (slight blue cast intact). Panel-black
-    lands at L*≈34, same as panel-adapted, just without the CAT step.
-    Same-intent counterpart to panel-adapted for users who don't want to
-    pretend the panel is neutral.
-
-  - expanded: α-clipped black-point compensation followed by L*-symmetric
-    scaling. α = max value such that XYZ_p − α·XYZ_black ≥ 0 component-wise
-    across every patch (typically capped by the warmest patch's Z, since
-    panel-black is bluish). After subtraction, f is chosen so that
-    L*(panel-white) + L*(panel-black) = 100 — same perceptual symmetry as
-    the `symmetric` mode but applied to BPC-shifted XYZ, so panel-black
-    actually lands closer to L*=0 than `symmetric` achieves on its own.
+  - bpc{50,75,80,90,100}-adjusted: same recipe as `adjusted` but with α
+    fixed at the named percentage. When α > α_max, some warm-patch
+    components go negative after subtraction and are clipped to zero —
+    lossy on those patches' chromaticity but lands panel-black progressively
+    darker. bpc100-adjusted is full BPC: panel-black → (0,0,0), panel-white
+    → L*=100, with maximum chroma loss on red/yellow.
 
 Output: per-illuminant tables on stdout, plus an HTML report with swatches
 and per-patch reflectance plots written to <calib_dir>/report.html.
@@ -62,7 +50,15 @@ warnings.filterwarnings("ignore", category=colour.utilities.ColourRuntimeWarning
 warnings.filterwarnings("ignore", category=colour.utilities.ColourUsageWarning)
 
 
-MODES = ("absolute", "panel-adapted", "symmetric", "stretched", "expanded")
+BPC_ALPHAS = {
+    "bpc50-adjusted": 0.50,
+    "bpc75-adjusted": 0.75,
+    "bpc80-adjusted": 0.80,
+    "bpc90-adjusted": 0.90,
+    "bpc100-adjusted": 1.00,
+}
+
+MODES = ("absolute", "adjusted", *BPC_ALPHAS.keys())
 
 
 MODE_DESCRIPTIONS = {
@@ -71,30 +67,32 @@ MODE_DESCRIPTIONS = {
         "absolute luminance — panel white encodes below #FFFFFF, panel black "
         "above #000000."
     ),
-    "panel-adapted": (
-        "Bradford CAT panel-white → D65, then encode as sRGB with D65 reference. "
-        "Panel white maps onto sRGB white; chromaticities relative to panel "
-        "white are preserved."
+    "adjusted": (
+        "α_max BPC + L*-symmetric scaling. α set to the largest value where "
+        "no patch component goes negative (typically limited by the warmest "
+        "patch's Z); f then chosen so panel-white-L* + panel-black-L* = 100. "
+        "Pure non-lossy transformation — every patch's chromaticity is "
+        "preserved exactly."
     ),
-    "symmetric": (
-        "Uniform Y scale (no chromatic adaptation). Each patch's XYZ is "
-        "multiplied by f, with f chosen so panel-white and panel-black are "
-        "equidistant from L*=100 and L*=0. Panel chromaticity is preserved — "
-        "panel-white retains its measured slight blue cast rather than being "
-        "remapped to a neutral gray."
+    "bpc50-adjusted": (
+        "Fixed α = 0.50 BPC + L*-symmetric scaling. Warm-patch components "
+        "going negative are clipped to zero, losing chromaticity in those "
+        "channels in exchange for a darker black point."
     ),
-    "stretched": (
-        "Uniform Y scale (no chromatic adaptation). Each patch's XYZ is "
-        "multiplied by f = 100/Y_w so panel-white reaches L*=100. Panel "
-        "chromaticity is preserved — panel-white's slight blue cast is "
-        "retained at maximum lightness rather than being neutralised by CAT."
+    "bpc75-adjusted": (
+        "Fixed α = 0.75 BPC + L*-symmetric scaling. Stronger black-point "
+        "subtraction; more chromaticity loss on warm patches."
     ),
-    "expanded": (
-        "α-clipped BPC + L*-symmetric scaling. α subtracts as much "
-        "panel-black-XYZ as possible without driving any patch component "
-        "negative (typically limited by the warmest patch's Z), then f is "
-        "chosen so panel-white-L* + panel-black-L* = 100. Combines "
-        "black-point darkening with perceptual symmetry."
+    "bpc80-adjusted": (
+        "Fixed α = 0.80 BPC + L*-symmetric scaling."
+    ),
+    "bpc90-adjusted": (
+        "Fixed α = 0.90 BPC + L*-symmetric scaling."
+    ),
+    "bpc100-adjusted": (
+        "Fixed α = 1.00 BPC + L*-symmetric scaling — full black-point "
+        "compensation. Panel-black → (0,0,0), panel-white → L*=100. Maximum "
+        "chromaticity loss on warm patches whose Z is below panel-black's."
     ),
 }
 
@@ -121,7 +119,7 @@ class PatchResult:
 class ModeResult:
     mode: str
     results: list[PatchResult]
-    k: float | None = None  # only set for "symmetric"
+    k: float | None = None  # only set for "expanded" (the α value)
 
 
 def parse_sp(path: Path) -> tuple[np.ndarray, np.ndarray]:
@@ -168,15 +166,38 @@ def integrate_xyz(patch: Patch, ill_sd, cmfs) -> np.ndarray:
     return np.asarray(colour.sd_to_XYZ(patch.sd, cmfs, ill_sd, method="Integration"))
 
 
+def _l_star(Y_0_100: float) -> float:
+    """CIE L* with Yn=100, piecewise (linear regime below the cube-root cusp)."""
+    ratio = Y_0_100 / 100.0
+    if ratio <= 216 / 24389:  # ≈0.008856
+        return ratio * (24389 / 27)  # ≈903.296 · ratio
+    return 116 * ratio ** (1 / 3) - 16
+
+
 def symmetric_y_scale(
     panel_white_Y_0_100: float, panel_black_Y_0_100: float
 ) -> float:
     """Returns the XYZ multiplier f such that L*(Y_w·f) + L*(Y_k·f) = 100,
-    where Y values are in the 0–100 scale (perfect reflector Y=100). The
-    L* formula uses Yn=100. This Y-only scaling preserves the panel's
-    measured chromaticity in the output (no chromatic adaptation)."""
-    sum_cbrt = panel_white_Y_0_100 ** (1 / 3) + panel_black_Y_0_100 ** (1 / 3)
-    return float(100 * (132 / 116) ** 3 / sum_cbrt ** 3)
+    where Y values are in the 0–100 scale (perfect reflector Y=100). This
+    Y-only scaling preserves the panel's measured chromaticity in the
+    output (no chromatic adaptation).
+
+    Solved numerically via brentq because the cube-root extrapolation of L*
+    breaks down near Y=0 (gives −16 instead of 0), which matters for high-α
+    BPC modes where panel-black-Y after subtraction is small or zero.
+    """
+    if panel_black_Y_0_100 <= 0:
+        return 100.0 / panel_white_Y_0_100
+    from scipy.optimize import brentq
+
+    def err(f: float) -> float:
+        return (
+            _l_star(panel_white_Y_0_100 * f)
+            + _l_star(panel_black_Y_0_100 * f)
+            - 100.0
+        )
+
+    return float(brentq(err, 1e-6, 1000.0))
 
 
 def compute_palette(
@@ -185,7 +206,6 @@ def compute_palette(
     ill_sd,
     ill_xy: np.ndarray,
     cmfs,
-    d65_xy: np.ndarray,
     panel_white_XYZ: np.ndarray,
     panel_black_XYZ: np.ndarray,
 ) -> ModeResult:
@@ -201,49 +221,17 @@ def compute_palette(
             ))
         return ModeResult(mode, results)
 
-    if mode == "panel-adapted":
-        d65_XYZ_100 = np.asarray(colour.xy_to_XYZ(d65_xy)) * 100
-        results = []
-        for patch in patches:
-            XYZ_abs = integrate_xyz(patch, ill_sd, cmfs)
-            XYZ_adapted = np.asarray(
-                colour.chromatic_adaptation(
-                    XYZ_abs, panel_white_XYZ, d65_XYZ_100, transform="Bradford"
-                )
-            )
-            results.append(PatchResult(
-                patch.label,
-                XYZ_adapted,
-                np.asarray(colour.XYZ_to_Lab(XYZ_adapted / 100, d65_xy)),
-                xyz_to_srgb_u8(XYZ_adapted, d65_xy),
-            ))
-        return ModeResult(mode, results)
-
-    if mode in ("symmetric", "stretched"):
-        if mode == "symmetric":
-            f = symmetric_y_scale(panel_white_XYZ[1], panel_black_XYZ[1])
-        else:
-            f = 100.0 / float(panel_white_XYZ[1])
-        results = []
-        for patch in patches:
-            XYZ_scaled = integrate_xyz(patch, ill_sd, cmfs) * f
-            results.append(PatchResult(
-                patch.label,
-                XYZ_scaled,
-                np.asarray(colour.XYZ_to_Lab(XYZ_scaled / 100, ill_xy)),
-                xyz_to_srgb_u8(XYZ_scaled, ill_xy),
-            ))
-        return ModeResult(mode, results, k=f)
-
-    if mode == "expanded":
+    if mode == "adjusted" or mode in BPC_ALPHAS:
         all_xyz = [integrate_xyz(patch, ill_sd, cmfs) for patch in patches]
-        # α_max: largest α with XYZ_p − α·XYZ_black ≥ 0 across every
-        # (patch, component). Components of XYZ_black at zero (won't happen
-        # for real measurements but be safe) drop out of the constraint.
-        denom = np.where(panel_black_XYZ > 0, panel_black_XYZ, np.inf)
-        alpha = float(np.min(np.stack(all_xyz) / denom))
-        # f chosen so L*(Y_w_after·f) + L*(Y_k_after·f) = 100, same equation
-        # as `symmetric` but applied to the post-subtraction Y values.
+        if mode == "adjusted":
+            # α_max: largest α with XYZ_p − α·XYZ_black ≥ 0 across every
+            # (patch, component). Components of XYZ_black at zero (won't
+            # happen for real measurements but be safe) drop out of the
+            # constraint.
+            denom = np.where(panel_black_XYZ > 0, panel_black_XYZ, np.inf)
+            alpha = float(np.min(np.stack(all_xyz) / denom))
+        else:
+            alpha = BPC_ALPHAS[mode]
         Y_w_after = float(panel_white_XYZ[1] - alpha * panel_black_XYZ[1])
         Y_k_after = float((1.0 - alpha) * panel_black_XYZ[1])
         f = symmetric_y_scale(Y_w_after, Y_k_after)
@@ -303,14 +291,15 @@ def spectrum_svg(
 def _rust_block(ill_name: str, mode: str, mr: ModeResult) -> str:
     suffix_map = {
         "absolute": "",
-        "panel-adapted": "_PANEL_ADAPTED",
-        "symmetric": "_SYMMETRIC",
-        "stretched": "_STRETCHED",
-        "expanded": "_EXPANDED",
+        "adjusted": "_ADJUSTED",
+        "bpc50-adjusted": "_BPC50_ADJUSTED",
+        "bpc75-adjusted": "_BPC75_ADJUSTED",
+        "bpc80-adjusted": "_BPC80_ADJUSTED",
+        "bpc90-adjusted": "_BPC90_ADJUSTED",
+        "bpc100-adjusted": "_BPC100_ADJUSTED",
     }
     name = f"SPECTRA6_{ill_name}{suffix_map[mode]}"
-    sym = "α" if mode == "expanded" else "f"
-    extra = f" ({sym}={mr.k:.4f})" if mr.k is not None else ""
+    extra = f" (α={mr.k:.4f})" if mr.k is not None else ""
     lines = [
         f"// Spectra 6, illuminant {ill_name}, mode={mode}{extra}.",
         f"pub const {name}: [[u8; 3]; {len(mr.results)}] = [",
@@ -364,9 +353,8 @@ def render_html(
             extra = ""
             if mr.k is not None:
                 Ls = [r.Lab[0] for r in mr.results]
-                sym = "α" if mode == "expanded" else "f"
                 extra = (
-                    f' <span class="k">{sym}={mr.k:.4f} · '
+                    f' <span class="k">α={mr.k:.4f} · '
                     f'panel-white L*={max(Ls):.1f} · '
                     f'panel-black L*={min(Ls):.1f}</span>'
                 )
@@ -465,7 +453,6 @@ def main() -> int:
 
     cmfs = colour.MSDS_CMFS["CIE 1931 2 Degree Standard Observer"]
     chromaticities = colour.CCS_ILLUMINANTS["CIE 1931 2 Degree Standard Observer"]
-    d65_xy = chromaticities["D65"]
 
     by_illuminant: dict[str, dict[str, ModeResult]] = {}
     for ill_name in args.illuminants:
@@ -478,7 +465,7 @@ def main() -> int:
         by_illuminant[ill_name] = {
             mode: compute_palette(
                 patches, mode, ill_sd, ill_xy, cmfs,
-                d65_xy, panel_white_XYZ, panel_black_XYZ,
+                panel_white_XYZ, panel_black_XYZ,
             )
             for mode in MODES
         }
@@ -486,8 +473,7 @@ def main() -> int:
     for ill_name, modes in by_illuminant.items():
         print(f"== Illuminant {ill_name} (CIE 1931 2°) ==")
         for mode, mr in modes.items():
-            sym = "α" if mode == "expanded" else "f"
-            extra = f"  [{sym}={mr.k:.4f}]" if mr.k is not None else ""
+            extra = f"  [α={mr.k:.4f}]" if mr.k is not None else ""
             print(f"-- {mode}{extra} --")
             print(
                 f"  {'label':<8} {'sRGB':<18} {'hex':<9} "
