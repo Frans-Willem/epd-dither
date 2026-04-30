@@ -25,3 +25,7 @@ target
 # tests/regression.sh.
 /tests/regression-*/
 !/tests/regression-master/
+
+# Python virtualenv for calibration tooling (deps pinned in
+# calibration/requirements.txt; recreate with `python3 -m venv .venv`).
+/.venv/

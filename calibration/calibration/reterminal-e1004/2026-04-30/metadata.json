@@ -1,0 +1,23 @@
+{
+  "started": "2026-04-30T17:15:33",
+  "labels": [
+    "black",
+    "white",
+    "blue",
+    "green",
+    "red",
+    "yellow"
+  ],
+  "reps": 4,
+  "spotread_invocation": "spotread -v -H [-N] -O <fname.sp>",
+  "instrument": {
+    "Instrument Type": "GretagMacbeth i1 Pro",
+    "Serial Number": "883617",
+    "Firmware version": "503",
+    "CPLD version": "999",
+    "Date manufactured": "3-4-2008",
+    "U.V. filter": "Yes",
+    "Total lamp usage": "340.651672"
+  },
+  "note": ""
+}
