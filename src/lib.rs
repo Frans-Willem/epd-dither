@@ -9,5 +9,6 @@ mod helpers;
 #[cfg(feature = "image")]
 pub mod image_adapter;
 pub mod noise;
+pub mod spectra6;
 
 pub use decompose::Decomposer;

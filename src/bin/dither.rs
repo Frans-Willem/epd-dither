@@ -4,7 +4,15 @@ use epd_dither::decompose::gray::{
 };
 use epd_dither::decompose::naive::{EPDOPTIMIZE, NaiveDecomposer, NaiveDecomposerStrategy};
 use epd_dither::decompose::octahedron::{
-    NAIVE_RGB6, OctahedronDecomposer, OctahedronDecomposerAxisStrategy, SPECTRA6,
+    NAIVE_RGB6, OctahedronDecomposer, OctahedronDecomposerAxisStrategy,
+};
+use epd_dither::spectra6::{
+    SPECTRA6, SPECTRA6_D50, SPECTRA6_D50_ADJUSTED, SPECTRA6_D50_BPC50_ADJUSTED,
+    SPECTRA6_D50_BPC75_ADJUSTED, SPECTRA6_D50_BPC80_ADJUSTED,
+    SPECTRA6_D50_BPC90_ADJUSTED, SPECTRA6_D50_BPC100_ADJUSTED,
+    SPECTRA6_D65, SPECTRA6_D65_ADJUSTED, SPECTRA6_D65_BPC50_ADJUSTED,
+    SPECTRA6_D65_BPC75_ADJUSTED, SPECTRA6_D65_BPC80_ADJUSTED,
+    SPECTRA6_D65_BPC90_ADJUSTED, SPECTRA6_D65_BPC100_ADJUSTED,
 };
 use epd_dither::dither::{DecomposingDitherStrategy, diffuse::ImageWriter};
 use epd_dither::image_adapter::PaletteDitheringWithNoise;
@@ -194,6 +202,20 @@ impl DiffuseMethod {
 enum Palette {
     Naive,
     Spectra6,
+    Spectra6D50,
+    Spectra6D50Adjusted,
+    Spectra6D50Bpc50Adjusted,
+    Spectra6D50Bpc75Adjusted,
+    Spectra6D50Bpc80Adjusted,
+    Spectra6D50Bpc90Adjusted,
+    Spectra6D50Bpc100Adjusted,
+    Spectra6D65,
+    Spectra6D65Adjusted,
+    Spectra6D65Bpc50Adjusted,
+    Spectra6D65Bpc75Adjusted,
+    Spectra6D65Bpc80Adjusted,
+    Spectra6D65Bpc90Adjusted,
+    Spectra6D65Bpc100Adjusted,
     Epdoptimize,
     Grayscale2,
     Grayscale4,
@@ -224,6 +246,20 @@ impl Palette {
         match self {
             Palette::Naive => NAIVE_RGB6.to_vec(),
             Palette::Spectra6 => SPECTRA6.to_vec(),
+            Palette::Spectra6D50 => SPECTRA6_D50.to_vec(),
+            Palette::Spectra6D50Adjusted => SPECTRA6_D50_ADJUSTED.to_vec(),
+            Palette::Spectra6D50Bpc50Adjusted => SPECTRA6_D50_BPC50_ADJUSTED.to_vec(),
+            Palette::Spectra6D50Bpc75Adjusted => SPECTRA6_D50_BPC75_ADJUSTED.to_vec(),
+            Palette::Spectra6D50Bpc80Adjusted => SPECTRA6_D50_BPC80_ADJUSTED.to_vec(),
+            Palette::Spectra6D50Bpc90Adjusted => SPECTRA6_D50_BPC90_ADJUSTED.to_vec(),
+            Palette::Spectra6D50Bpc100Adjusted => SPECTRA6_D50_BPC100_ADJUSTED.to_vec(),
+            Palette::Spectra6D65 => SPECTRA6_D65.to_vec(),
+            Palette::Spectra6D65Adjusted => SPECTRA6_D65_ADJUSTED.to_vec(),
+            Palette::Spectra6D65Bpc50Adjusted => SPECTRA6_D65_BPC50_ADJUSTED.to_vec(),
+            Palette::Spectra6D65Bpc75Adjusted => SPECTRA6_D65_BPC75_ADJUSTED.to_vec(),
+            Palette::Spectra6D65Bpc80Adjusted => SPECTRA6_D65_BPC80_ADJUSTED.to_vec(),
+            Palette::Spectra6D65Bpc90Adjusted => SPECTRA6_D65_BPC90_ADJUSTED.to_vec(),
+            Palette::Spectra6D65Bpc100Adjusted => SPECTRA6_D65_BPC100_ADJUSTED.to_vec(),
             Palette::Epdoptimize => EPDOPTIMIZE.to_vec(),
             Palette::Grayscale2 => GRAYSCALE2.iter().map(|&v| [v, v, v]).collect(),
             Palette::Grayscale4 => GRAYSCALE4.iter().map(|&v| [v, v, v]).collect(),
