@@ -34,6 +34,11 @@ mod alloc_impl {
         #[default]
         FavorMix,
         FavorDominant,
+        /// Blend over all containing tetrahedra with weights
+        /// `α_i ∝ (∏_j w_{i,j})^p`. `p = 0` averages equally; higher `p`
+        /// concentrates on the most-interior tetrahedron. See
+        /// `documentation/tetra-blend-research.md`.
+        TetraBlend(u32),
     }
 
     pub struct NaiveDecomposer<T: Scalar + ComplexField> {
@@ -134,6 +139,58 @@ mod alloc_impl {
         ) -> (Vector4<T>, &'t [usize; 4]) {
             if b.0.max() > a.0.max() { b } else { a }
         }
+
+        /// Blend all containing tetrahedra. Per tetrahedron the score is
+        /// `α = (∏_j w_j)^power` (and `α = 1` if `power == 0`); the output is
+        /// `Σ α·w / Σ α`. Returns `true` iff at least one tetrahedron
+        /// contained `input` and the accumulated denominator was positive.
+        ///
+        /// `out` must already be zeroed.
+        fn blend_tetras_into(&self, input: &Point3<T>, out: &mut [T], power: u32) -> bool {
+            let mut total: T = zero();
+            let mut found_any = false;
+            for (tetra, vertex_indices) in self.tetras.iter() {
+                let projected = tetra.project(input);
+                if projected.min() < zero() {
+                    continue;
+                }
+                found_any = true;
+                // base = ∏_j w_j; alpha = base^power. Loop multiplications
+                // because T only requires ComplexField, not num_traits::Pow.
+                let mut base: T = T::one();
+                for j in 0..4 {
+                    base *= projected[j].clone();
+                }
+                let mut alpha: T = T::one();
+                for _ in 0..power {
+                    alpha *= base.clone();
+                }
+                for j in 0..4 {
+                    let global = vertex_indices[j];
+                    if global < self.num_colors {
+                        out[global] += alpha.clone() * projected[j].clone();
+                    }
+                }
+                total += alpha;
+            }
+            // Degenerate `total == 0` happens only when `input` lies on a
+            // palette edge/vertex (every containing tetra has a zero weight)
+            // and `power >= 1`. Fall through to the face/edge handler in
+            // that case rather than producing NaN. Negated comparison
+            // (rather than `total <= zero()`) so a NaN `total` also lands
+            // on the fallback path.
+            #[allow(clippy::neg_cmp_op_on_partial_ord)]
+            if !found_any || !(total > zero()) {
+                for slot in out.iter_mut() {
+                    *slot = zero();
+                }
+                return false;
+            }
+            for slot in out.iter_mut() {
+                *slot = slot.clone() / total.clone();
+            }
+            true
+        }
     }
 
     impl<T: Scalar> crate::decompose::Decomposer<T> for NaiveDecomposer<T>
@@ -158,22 +215,32 @@ mod alloc_impl {
                 *slot = zero();
             }
 
-            let in_tetras = self.tetras.iter().filter_map(|(tetra, vertex_indices)| {
-                let projected = tetra.project(input);
-                if projected.min() < zero() {
-                    None
+            let handled = if let NaiveDecomposerStrategy::TetraBlend(power) = self.strategy {
+                self.blend_tetras_into(input, out, power)
+            } else {
+                let in_tetras = self.tetras.iter().filter_map(|(tetra, vertex_indices)| {
+                    let projected = tetra.project(input);
+                    if projected.min() < zero() {
+                        None
+                    } else {
+                        Some((projected, vertex_indices))
+                    }
+                });
+                let in_tetras = in_tetras.reduce(match self.strategy {
+                    NaiveDecomposerStrategy::FavorMix => Self::compare_tetra_projection_favor_mix,
+                    NaiveDecomposerStrategy::FavorDominant => {
+                        Self::compare_tetra_projection_favor_dominant
+                    }
+                    NaiveDecomposerStrategy::TetraBlend(_) => unreachable!(),
+                });
+                if let Some((local_barycentric, vertex_indices)) = in_tetras {
+                    self.write_global_barycentric(local_barycentric, vertex_indices, out);
+                    true
                 } else {
-                    Some((projected, vertex_indices))
+                    false
                 }
-            });
-            let in_tetras = in_tetras.reduce(match self.strategy {
-                NaiveDecomposerStrategy::FavorMix => Self::compare_tetra_projection_favor_mix,
-                NaiveDecomposerStrategy::FavorDominant => {
-                    Self::compare_tetra_projection_favor_dominant
-                }
-            });
-            if let Some((local_barycentric, vertex_indices)) = in_tetras {
-                self.write_global_barycentric(local_barycentric, vertex_indices, out);
+            };
+            if handled {
                 return;
             }
             let on_faces = self.faces.iter().filter_map(|(triangle, vertex_indices)| {

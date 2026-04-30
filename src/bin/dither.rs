@@ -84,6 +84,9 @@ enum DecomposeStrategy {
     OctahedronFurthest,
     NaiveMix,
     NaiveDominant,
+    /// `NaiveDecomposer` with `TetraBlend(p)` — smooth blend over containing
+    /// tetrahedra weighted by `(∏_j w_j)^p`.
+    NaiveBlend(u32),
     /// No-spread 1-D grayscale; equivalent under any of the gray decomposers.
     /// Currently routed through `PureSpreadGrayDecomposer` with spread = 0.
     Grayscale,
@@ -101,6 +104,7 @@ impl DecomposeStrategy {
         " octahedron-furthest       Octahedron, pick furthest axis\n",
         " naive-mix                 Naive, favour mixed weights\n",
         " naive-dominant            Naive, favour dominant component\n",
+        " naive-blend[:<p>]         Naive, smooth blend (default p=1)\n",
         " grayscale                 1-D grayscale, no spread\n",
         " gray-pure-spread:<r>      Pure-spread grayscale, r in [0, 1]\n",
         " gray-offset-blend:<r>     Offset-blend grayscale, r in [0, 1]\n\n",
@@ -108,6 +112,7 @@ impl DecomposeStrategy {
         " --strategy octahedron-closest\n",
         " --strategy grayscale\n",
         " --strategy gray-pure-spread:0.25\n",
+        " --strategy naive-blend:2\n",
     );
 }
 
@@ -133,6 +138,16 @@ impl std::str::FromStr for DecomposeStrategy {
             "octahedron-furthest" => Ok(Self::OctahedronFurthest),
             "naive-mix" => Ok(Self::NaiveMix),
             "naive-dominant" => Ok(Self::NaiveDominant),
+            "naive-blend" => Ok(Self::NaiveBlend(1)),
+            _ if s.starts_with("naive-blend:") => {
+                let p_str = &s["naive-blend:".len()..];
+                let p = p_str.parse::<u32>().map_err(|_| {
+                    format!(
+                        "invalid value `{s}`: expected `naive-blend:<p>` where p is a non-negative integer"
+                    )
+                })?;
+                Ok(Self::NaiveBlend(p))
+            }
             "grayscale" => Ok(Self::Grayscale),
             _ if s.starts_with("gray-pure-spread:") => Ok(Self::GrayPureSpread(
                 parse_unit_interval(s, "gray-pure-spread:")?,
@@ -368,6 +383,17 @@ fn main() {
             let decomposer = NaiveDecomposer::new(dither_palette_as_points.as_slice())
                 .unwrap()
                 .with_strategy(NaiveDecomposerStrategy::FavorDominant);
+            epd_dither::dither::diffuse::diffuse_dither(
+                DecomposingDitherStrategy::new(decomposer, color_to_point),
+                matrix,
+                &mut inout,
+                true,
+            );
+        }
+        DecomposeStrategy::NaiveBlend(power) => {
+            let decomposer = NaiveDecomposer::new(dither_palette_as_points.as_slice())
+                .unwrap()
+                .with_strategy(NaiveDecomposerStrategy::TetraBlend(power));
             epd_dither::dither::diffuse::diffuse_dither(
                 DecomposingDitherStrategy::new(decomposer, color_to_point),
                 matrix,
