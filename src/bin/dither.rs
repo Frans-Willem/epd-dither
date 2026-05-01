@@ -6,16 +6,15 @@ use epd_dither::decompose::naive::{EPDOPTIMIZE, NaiveDecomposer, NaiveDecomposer
 use epd_dither::decompose::octahedron::{
     NAIVE_RGB6, OctahedronDecomposer, OctahedronDecomposerAxisStrategy,
 };
-use epd_dither::spectra6::{
-    SPECTRA6, SPECTRA6_D50, SPECTRA6_D50_ADJUSTED, SPECTRA6_D50_BPC50_ADJUSTED,
-    SPECTRA6_D50_BPC75_ADJUSTED, SPECTRA6_D50_BPC80_ADJUSTED,
-    SPECTRA6_D50_BPC90_ADJUSTED, SPECTRA6_D50_BPC100_ADJUSTED,
-    SPECTRA6_D65, SPECTRA6_D65_ADJUSTED, SPECTRA6_D65_BPC50_ADJUSTED,
-    SPECTRA6_D65_BPC75_ADJUSTED, SPECTRA6_D65_BPC80_ADJUSTED,
-    SPECTRA6_D65_BPC90_ADJUSTED, SPECTRA6_D65_BPC100_ADJUSTED,
-};
 use epd_dither::dither::{DecomposingDitherStrategy, diffuse::ImageWriter};
 use epd_dither::image_adapter::PaletteDitheringWithNoise;
+use epd_dither::spectra6::{
+    SPECTRA6, SPECTRA6_D50, SPECTRA6_D50_ADJUSTED, SPECTRA6_D50_BPC50_ADJUSTED,
+    SPECTRA6_D50_BPC75_ADJUSTED, SPECTRA6_D50_BPC80_ADJUSTED, SPECTRA6_D50_BPC90_ADJUSTED,
+    SPECTRA6_D50_BPC100_ADJUSTED, SPECTRA6_D65, SPECTRA6_D65_ADJUSTED, SPECTRA6_D65_BPC50_ADJUSTED,
+    SPECTRA6_D65_BPC75_ADJUSTED, SPECTRA6_D65_BPC80_ADJUSTED, SPECTRA6_D65_BPC90_ADJUSTED,
+    SPECTRA6_D65_BPC100_ADJUSTED,
+};
 use image::{ImageBuffer, ImageReader, Luma, Rgb};
 use nalgebra::geometry::Point3;
 use rand::distr::StandardUniform;
@@ -387,8 +386,8 @@ fn main() {
                 .unwrap()
                 .with_strategy(OctahedronDecomposerAxisStrategy::Closest);
             epd_dither::dither::diffuse::diffuse_dither(
-                DecomposingDitherStrategy::new(decomposer, color_to_point),
-                matrix,
+                &DecomposingDitherStrategy::new(decomposer, color_to_point),
+                &matrix,
                 &mut inout,
                 true,
             );
@@ -398,8 +397,8 @@ fn main() {
                 .unwrap()
                 .with_strategy(OctahedronDecomposerAxisStrategy::Furthest);
             epd_dither::dither::diffuse::diffuse_dither(
-                DecomposingDitherStrategy::new(decomposer, color_to_point),
-                matrix,
+                &DecomposingDitherStrategy::new(decomposer, color_to_point),
+                &matrix,
                 &mut inout,
                 true,
             );
@@ -409,8 +408,8 @@ fn main() {
                 .unwrap()
                 .with_strategy(NaiveDecomposerStrategy::FavorMix);
             epd_dither::dither::diffuse::diffuse_dither(
-                DecomposingDitherStrategy::new(decomposer, color_to_point),
-                matrix,
+                &DecomposingDitherStrategy::new(decomposer, color_to_point),
+                &matrix,
                 &mut inout,
                 true,
             );
@@ -420,8 +419,8 @@ fn main() {
                 .unwrap()
                 .with_strategy(NaiveDecomposerStrategy::FavorDominant);
             epd_dither::dither::diffuse::diffuse_dither(
-                DecomposingDitherStrategy::new(decomposer, color_to_point),
-                matrix,
+                &DecomposingDitherStrategy::new(decomposer, color_to_point),
+                &matrix,
                 &mut inout,
                 true,
             );
@@ -431,8 +430,8 @@ fn main() {
                 .unwrap()
                 .with_strategy(NaiveDecomposerStrategy::TetraBlend(power));
             epd_dither::dither::diffuse::diffuse_dither(
-                DecomposingDitherStrategy::new(decomposer, color_to_point),
-                matrix,
+                &DecomposingDitherStrategy::new(decomposer, color_to_point),
+                &matrix,
                 &mut inout,
                 true,
             );
@@ -445,8 +444,8 @@ fn main() {
             let levels = grayscale_levels(&dither_palette_as_points);
             let decomposer = OffsetBlendGrayDecomposer::new(levels).unwrap();
             epd_dither::dither::diffuse::diffuse_dither(
-                DecomposingDitherStrategy::new(decomposer, rgb_to_brightness),
-                matrix,
+                &DecomposingDitherStrategy::new(decomposer, rgb_to_brightness),
+                &matrix,
                 &mut inout,
                 true,
             );
@@ -457,8 +456,8 @@ fn main() {
                 .unwrap()
                 .with_spread_ratio(spread_ratio);
             epd_dither::dither::diffuse::diffuse_dither(
-                DecomposingDitherStrategy::new(decomposer, rgb_to_brightness),
-                matrix,
+                &DecomposingDitherStrategy::new(decomposer, rgb_to_brightness),
+                &matrix,
                 &mut inout,
                 true,
             );
@@ -469,8 +468,8 @@ fn main() {
                 .unwrap()
                 .with_distance(distance);
             epd_dither::dither::diffuse::diffuse_dither(
-                DecomposingDitherStrategy::new(decomposer, rgb_to_brightness),
-                matrix,
+                &DecomposingDitherStrategy::new(decomposer, rgb_to_brightness),
+                &matrix,
                 &mut inout,
                 true,
             );

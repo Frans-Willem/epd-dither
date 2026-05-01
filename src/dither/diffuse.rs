@@ -97,12 +97,12 @@ impl Iterator for RangeWithDir {
 
 #[cfg(feature = "alloc")]
 pub fn diffuse_dither<
-    S: PixelStrategy,
-    M: crate::dither::diffusion_matrix::DiffusionMatrix,
-    I: ImageSize + ImageReader<S::Source> + ImageWriter<S::Target>,
+    S: PixelStrategy + ?Sized,
+    M: crate::dither::diffusion_matrix::DiffusionMatrix + ?Sized,
+    I: ImageSize + ImageReader<S::Source> + ImageWriter<S::Target> + ?Sized,
 >(
-    strategy: S,
-    matrix: M,
+    strategy: &S,
+    matrix: &M,
     inout: &mut I,
     serpentine: bool,
 ) {
