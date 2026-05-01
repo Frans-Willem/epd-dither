@@ -38,6 +38,7 @@ pub const SPECTRA6: [[u8; 3]; 6] = SPECTRA6_D65_BPC80_ADJUSTED;
 
 /// Absolute, D50 illuminant. Measured panel reflectance integrated under
 /// D50 then converted to sRGB via Bradford CAT to D65.
+#[rustfmt::skip]
 pub const SPECTRA6_D50: [[u8; 3]; 6] = [
     [ 34,  42,  69], // K
     [138, 153, 164], // W
@@ -48,6 +49,7 @@ pub const SPECTRA6_D50: [[u8; 3]; 6] = [
 ];
 
 /// D50, BPC at α_max + L*-symmetric scaling. Lossless (no clipping).
+#[rustfmt::skip]
 pub const SPECTRA6_D50_ADJUSTED: [[u8; 3]; 6] = [
     [ 40,  49,  79], // K
     [180, 200, 211], // W
@@ -58,6 +60,7 @@ pub const SPECTRA6_D50_ADJUSTED: [[u8; 3]; 6] = [
 ];
 
 /// D50, BPC at α=0.50 + L*-symmetric scaling. Warm-patch Z may clip.
+#[rustfmt::skip]
 pub const SPECTRA6_D50_BPC50_ADJUSTED: [[u8; 3]; 6] = [
     [ 35,  43,  70], // K
     [187, 208, 218], // W
@@ -68,6 +71,7 @@ pub const SPECTRA6_D50_BPC50_ADJUSTED: [[u8; 3]; 6] = [
 ];
 
 /// D50, BPC at α=0.75 + L*-symmetric scaling.
+#[rustfmt::skip]
 pub const SPECTRA6_D50_BPC75_ADJUSTED: [[u8; 3]; 6] = [
     [ 25,  32,  54], // K
     [202, 223, 231], // W
@@ -78,6 +82,7 @@ pub const SPECTRA6_D50_BPC75_ADJUSTED: [[u8; 3]; 6] = [
 ];
 
 /// D50, BPC at α=0.80 + L*-symmetric scaling.
+#[rustfmt::skip]
 pub const SPECTRA6_D50_BPC80_ADJUSTED: [[u8; 3]; 6] = [
     [ 22,  29,  49], // K
     [206, 228, 236], // W
@@ -88,6 +93,7 @@ pub const SPECTRA6_D50_BPC80_ADJUSTED: [[u8; 3]; 6] = [
 ];
 
 /// D50, BPC at α=0.90 + L*-symmetric scaling.
+#[rustfmt::skip]
 pub const SPECTRA6_D50_BPC90_ADJUSTED: [[u8; 3]; 6] = [
     [ 15,  20,  36], // K
     [218, 241, 248], // W
@@ -98,6 +104,7 @@ pub const SPECTRA6_D50_BPC90_ADJUSTED: [[u8; 3]; 6] = [
 ];
 
 /// D50, full BPC (α=1.00) + L*-symmetric scaling. Panel-black → (0,0,0).
+#[rustfmt::skip]
 pub const SPECTRA6_D50_BPC100_ADJUSTED: [[u8; 3]; 6] = [
     [  0,   0,   0], // K
     [235, 255, 255], // W
@@ -110,6 +117,7 @@ pub const SPECTRA6_D50_BPC100_ADJUSTED: [[u8; 3]; 6] = [
 // ---------- D65 ---------------------------------------------------------
 
 /// Absolute, D65 illuminant.
+#[rustfmt::skip]
 pub const SPECTRA6_D65: [[u8; 3]; 6] = [
     [ 33,  43,  69], // K
     [138, 154, 164], // W
@@ -120,6 +128,7 @@ pub const SPECTRA6_D65: [[u8; 3]; 6] = [
 ];
 
 /// D65, BPC at α_max + L*-symmetric scaling. Lossless (no clipping).
+#[rustfmt::skip]
 pub const SPECTRA6_D65_ADJUSTED: [[u8; 3]; 6] = [
     [ 39,  49,  79], // K
     [179, 199, 210], // W
@@ -130,6 +139,7 @@ pub const SPECTRA6_D65_ADJUSTED: [[u8; 3]; 6] = [
 ];
 
 /// D65, BPC at α=0.50 + L*-symmetric scaling.
+#[rustfmt::skip]
 pub const SPECTRA6_D65_BPC50_ADJUSTED: [[u8; 3]; 6] = [
     [ 34,  43,  70], // K
     [187, 207, 216], // W
@@ -140,6 +150,7 @@ pub const SPECTRA6_D65_BPC50_ADJUSTED: [[u8; 3]; 6] = [
 ];
 
 /// D65, BPC at α=0.75 + L*-symmetric scaling.
+#[rustfmt::skip]
 pub const SPECTRA6_D65_BPC75_ADJUSTED: [[u8; 3]; 6] = [
     [ 25,  32,  54], // K
     [201, 223, 230], // W
@@ -151,6 +162,7 @@ pub const SPECTRA6_D65_BPC75_ADJUSTED: [[u8; 3]; 6] = [
 
 /// D65, BPC at α=0.80 + L*-symmetric scaling. Lightness spread closest to
 /// the legacy phone-camera placeholder (≈77 L\*); aliased by [`SPECTRA6`].
+#[rustfmt::skip]
 pub const SPECTRA6_D65_BPC80_ADJUSTED: [[u8; 3]; 6] = [
     [ 22,  29,  49], // K
     [206, 227, 234], // W
@@ -161,6 +173,7 @@ pub const SPECTRA6_D65_BPC80_ADJUSTED: [[u8; 3]; 6] = [
 ];
 
 /// D65, BPC at α=0.90 + L*-symmetric scaling.
+#[rustfmt::skip]
 pub const SPECTRA6_D65_BPC90_ADJUSTED: [[u8; 3]; 6] = [
     [ 14,  20,  36], // K
     [218, 240, 246], // W
@@ -171,6 +184,7 @@ pub const SPECTRA6_D65_BPC90_ADJUSTED: [[u8; 3]; 6] = [
 ];
 
 /// D65, full BPC (α=1.00) + L*-symmetric scaling. Panel-black → (0,0,0).
+#[rustfmt::skip]
 pub const SPECTRA6_D65_BPC100_ADJUSTED: [[u8; 3]; 6] = [
     [  0,   0,   0], // K
     [235, 255, 255], // W
