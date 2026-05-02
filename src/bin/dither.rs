@@ -6,7 +6,9 @@ use epd_dither::decompose::naive::{EPDOPTIMIZE, NaiveDecomposer, NaiveDecomposer
 use epd_dither::decompose::octahedron::{
     NAIVE_RGB6, OctahedronDecomposer, OctahedronDecomposerAxisStrategy,
 };
-use epd_dither::dither::{DecomposingDitherStrategy, ImageSize, ImageSplit, ImageWriter};
+use epd_dither::dither::{
+    BundledDitherer, DecomposingDitherStrategy, DynDitherer, ImageSize, ImageSplit, ImageWriter,
+};
 use epd_dither::spectra6::{
     SPECTRA6, SPECTRA6_D50, SPECTRA6_D50_ADJUSTED, SPECTRA6_D50_BPC50_ADJUSTED,
     SPECTRA6_D50_BPC75_ADJUSTED, SPECTRA6_D50_BPC80_ADJUSTED, SPECTRA6_D50_BPC90_ADJUSTED,
@@ -179,19 +181,17 @@ enum DiffuseMethod {
 }
 
 impl DiffuseMethod {
-    pub fn to_boxed_matrix(
-        &self,
-    ) -> Box<dyn epd_dither::dither::diffusion_matrix::DiffusionMatrix> {
+    pub fn to_dynamic_matrix(&self) -> epd_dither::dither::diffusion_matrix::DynamicDiffusionMatrix {
+        use epd_dither::dither::diffusion_matrix::{
+            Atkinson, DynamicDiffusionMatrix, FloydSteinberg, JarvisJudiceAndNinke, NoDiffuse,
+            Sierra,
+        };
         match self {
-            DiffuseMethod::None => Box::new(epd_dither::dither::diffusion_matrix::NoDiffuse),
-            DiffuseMethod::Atkinson => Box::new(epd_dither::dither::diffusion_matrix::Atkinson),
-            DiffuseMethod::FloydSteinberg => {
-                Box::new(epd_dither::dither::diffusion_matrix::FloydSteinberg)
-            }
-            DiffuseMethod::JarvisJudiceAndNinke => {
-                Box::new(epd_dither::dither::diffusion_matrix::JarvisJudiceAndNinke)
-            }
-            DiffuseMethod::Sierra => Box::new(epd_dither::dither::diffusion_matrix::Sierra),
+            DiffuseMethod::None => DynamicDiffusionMatrix::new(NoDiffuse),
+            DiffuseMethod::Atkinson => DynamicDiffusionMatrix::new(Atkinson),
+            DiffuseMethod::FloydSteinberg => DynamicDiffusionMatrix::new(FloydSteinberg),
+            DiffuseMethod::JarvisJudiceAndNinke => DynamicDiffusionMatrix::new(JarvisJudiceAndNinke),
+            DiffuseMethod::Sierra => DynamicDiffusionMatrix::new(Sierra),
         }
     }
 }
@@ -282,38 +282,23 @@ fn color_to_point(color: Rgb<f32>) -> Point3<f32> {
     Point3::new(r, g, b)
 }
 
-/// Validate that every entry of a dither-palette is achromatic (r == g == b)
-/// and that the resulting brightness levels are strictly ascending, then
-/// return the levels. The output palette index has to align with the
-/// `dither_palette` order, so we require sorted input rather than sorting
-/// internally.
-fn grayscale_levels(palette: &[Point3<f32>]) -> Vec<f32> {
-    let levels: Vec<f32> = palette
-        .iter()
-        .enumerate()
-        .map(|(i, p)| {
-            if !(p.x == p.y && p.y == p.z) {
-                panic!(
-                    "grayscale strategy requires r == g == b for every dither-palette entry; entry {i} = {p:?} is not achromatic"
-                );
-            }
-            p.x
-        })
-        .collect();
-    for w in levels.windows(2) {
-        if w[0] >= w[1] {
-            panic!("grayscale dither-palette must be sorted strictly ascending by brightness");
-        }
-    }
-    levels
-}
-
 /// BT.709 luma (perceptually-weighted brightness) applied directly in sRGB
 /// space — no gamma round-trip, consistent with the rest of the pipeline
 /// (see notes on Yule-Nielsen optical dot gain in reflective media).
 fn rgb_to_brightness(color: Rgb<f32>) -> f32 {
     let [r, g, b] = color.0;
     0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+/// True iff every entry is achromatic (r == g == b) and the entries are
+/// strictly ascending in brightness. Required for any grayscale dither
+/// strategy: the output palette index has to align with the input order,
+/// so we want the caller to pass a sorted achromatic palette rather than
+/// silently project chromatic colours via Rec.709 luma or sort behind
+/// their back.
+fn verify_grayscale_palette(p: &[Rgb<u8>]) -> bool {
+    p.iter().all(|c| c.0[0] == c.0[1] && c.0[1] == c.0[2])
+        && p.windows(2).all(|w| w[0].0[0] < w[1].0[0])
 }
 
 /// Flat `Vec<usize>`-backed paletted-image sink for the dither pipeline.
@@ -348,109 +333,186 @@ impl ImageWriter<usize> for IndexedBuffer {
     }
 }
 
-/// Run `diffuse_dither` for one `DecomposingDitherStrategy`, branching on
-/// whether a noise function is configured. The `with_noise` / no-noise
-/// branches yield different concrete types for the strategy's `N`
-/// parameter, so the split is unavoidable here — pulling it into a helper
-/// keeps the eight strategy arms below from doubling.
-fn run_decomposing<D, F, Src, N, M, IO>(
+/// Concrete reader/writer pair the binary actually uses. `BundledDitherer`
+/// is type-erased to `Box<dyn DynDitherer<InOutType>>` against this alias
+/// so the build phase reduces to a nested match and the dither call itself
+/// is one virtual dispatch.
+type InOutType = ImageSplit<ImageBuffer<Rgb<f32>, Vec<f32>>, IndexedBuffer>;
+use epd_dither::dither::diffusion_matrix::DynamicDiffusionMatrix;
+
+/// Box a `DecomposingDitherStrategy` + matrix as a `DynDitherer`,
+/// branching once on whether noise is configured. The `with_noise` /
+/// no-noise branches produce different concrete `N` parameters; the
+/// `Box<dyn DynDitherer<_>>` return unifies them.
+fn build_decomposing<D, F, Src, N>(
     decomposer: D,
     convert: F,
     noise_fn: Option<N>,
-    matrix: &M,
-    inout: &mut IO,
-) where
-    D: epd_dither::Decomposer<f32>,
-    F: Fn(Src) -> D::Input,
-    N: Fn(usize, usize) -> f32,
-    M: epd_dither::dither::diffusion_matrix::DiffusionMatrix + ?Sized,
-    IO: epd_dither::dither::ImageSize
-        + epd_dither::dither::ImageReader<Src>
-        + epd_dither::dither::ImageWriter<usize>,
+    matrix: DynamicDiffusionMatrix,
+) -> Box<dyn DynDitherer<InOutType>>
+where
+    D: epd_dither::Decomposer<f32> + 'static,
+    F: Fn(Src) -> D::Input + 'static,
+    Src: 'static,
+    N: Fn(usize, usize) -> f32 + 'static,
+    InOutType: epd_dither::dither::ImageReader<Src>,
 {
     let strategy = DecomposingDitherStrategy::new(decomposer, convert);
     match noise_fn {
-        Some(n) => epd_dither::dither::diffuse::diffuse_dither(
-            &strategy.with_noise(n),
-            matrix,
-            inout,
-            true,
-        ),
-        None => epd_dither::dither::diffuse::diffuse_dither(&strategy, matrix, inout, true),
+        Some(n) => Box::new(BundledDitherer::new(strategy.with_noise(n), matrix)),
+        None => Box::new(BundledDitherer::new(strategy, matrix)),
     }
 }
 
-/// Match over `DecomposeStrategy` and dispatch to `run_decomposing` with
-/// the appropriate decomposer + convert function for each variant. Lifted
-/// out of `main` so the noise selection above can supply a single generic
-/// `N` to the entire eight-arm strategy match in one place.
-fn run_strategy<N, M, IO>(
+/// Match over `DecomposeStrategy` and build the corresponding
+/// `Box<dyn DynDitherer<InOutType>>`. Generic over the noise closure type
+/// so the eight strategy arms only appear once regardless of which noise
+/// source is selected.
+fn build_with_noise<N>(
     strategy_choice: &DecomposeStrategy,
-    palette: &[Point3<f32>],
+    palette: &[Rgb<u8>],
     noise_fn: Option<N>,
-    matrix: &M,
-    inout: &mut IO,
-) where
-    N: Fn(usize, usize) -> f32,
-    M: epd_dither::dither::diffusion_matrix::DiffusionMatrix + ?Sized,
-    IO: epd_dither::dither::ImageSize
-        + epd_dither::dither::ImageReader<Rgb<f32>>
-        + epd_dither::dither::ImageWriter<usize>,
+    matrix: DynamicDiffusionMatrix,
+) -> Box<dyn DynDitherer<InOutType>>
+where
+    N: Fn(usize, usize) -> f32 + 'static,
 {
+    let palette_rgb_f32: Vec<Rgb<f32>> = palette
+        .iter()
+        .map(|c| {
+            let [r, g, b] = c.0;
+            Rgb([r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0])
+        })
+        .collect();
     match *strategy_choice {
         DecomposeStrategy::OctahedronClosest => {
-            let decomposer = OctahedronDecomposer::new(palette)
+            let palette_points: Vec<Point3<f32>> =
+                palette_rgb_f32.iter().map(|p| color_to_point(*p)).collect();
+            let decomposer = OctahedronDecomposer::new(&palette_points)
                 .unwrap()
                 .with_strategy(OctahedronDecomposerAxisStrategy::Closest);
-            run_decomposing(decomposer, color_to_point, noise_fn, matrix, inout);
+            build_decomposing(decomposer, color_to_point, noise_fn, matrix)
         }
         DecomposeStrategy::OctahedronFurthest => {
-            let decomposer = OctahedronDecomposer::new(palette)
+            let palette_points: Vec<Point3<f32>> =
+                palette_rgb_f32.iter().map(|p| color_to_point(*p)).collect();
+            let decomposer = OctahedronDecomposer::new(&palette_points)
                 .unwrap()
                 .with_strategy(OctahedronDecomposerAxisStrategy::Furthest);
-            run_decomposing(decomposer, color_to_point, noise_fn, matrix, inout);
+            build_decomposing(decomposer, color_to_point, noise_fn, matrix)
         }
         DecomposeStrategy::NaiveMix => {
-            let decomposer = NaiveDecomposer::new(palette)
+            let palette_points: Vec<Point3<f32>> =
+                palette_rgb_f32.iter().map(|p| color_to_point(*p)).collect();
+            let decomposer = NaiveDecomposer::new(&palette_points)
                 .unwrap()
                 .with_strategy(NaiveDecomposerStrategy::FavorMix);
-            run_decomposing(decomposer, color_to_point, noise_fn, matrix, inout);
+            build_decomposing(decomposer, color_to_point, noise_fn, matrix)
         }
         DecomposeStrategy::NaiveDominant => {
-            let decomposer = NaiveDecomposer::new(palette)
+            let palette_points: Vec<Point3<f32>> =
+                palette_rgb_f32.iter().map(|p| color_to_point(*p)).collect();
+            let decomposer = NaiveDecomposer::new(&palette_points)
                 .unwrap()
                 .with_strategy(NaiveDecomposerStrategy::FavorDominant);
-            run_decomposing(decomposer, color_to_point, noise_fn, matrix, inout);
+            build_decomposing(decomposer, color_to_point, noise_fn, matrix)
         }
         DecomposeStrategy::NaiveBlend(power) => {
-            let decomposer = NaiveDecomposer::new(palette)
+            let palette_points: Vec<Point3<f32>> =
+                palette_rgb_f32.iter().map(|p| color_to_point(*p)).collect();
+            let decomposer = NaiveDecomposer::new(&palette_points)
                 .unwrap()
                 .with_strategy(NaiveDecomposerStrategy::TetraBlend(power));
-            run_decomposing(decomposer, color_to_point, noise_fn, matrix, inout);
+            build_decomposing(decomposer, color_to_point, noise_fn, matrix)
         }
         DecomposeStrategy::Grayscale => {
+            assert!(
+                verify_grayscale_palette(palette),
+                "grayscale strategy requires an achromatic, strictly-ascending palette"
+            );
             // Both gray decomposers produce identical output at parameter = 0
             // (plain bracket decomposition), but OffsetBlend takes its
             // early-out path while PureSpread still runs the full
             // asymmetric-spread arithmetic. Route through OffsetBlend.
-            let levels = grayscale_levels(palette);
+            let levels: Vec<f32> = palette_rgb_f32.iter().map(|p| rgb_to_brightness(*p)).collect();
             let decomposer = OffsetBlendGrayDecomposer::new(levels).unwrap();
-            run_decomposing(decomposer, rgb_to_brightness, noise_fn, matrix, inout);
+            build_decomposing(decomposer, rgb_to_brightness, noise_fn, matrix)
         }
         DecomposeStrategy::GrayPureSpread(spread_ratio) => {
-            let levels = grayscale_levels(palette);
+            assert!(
+                verify_grayscale_palette(palette),
+                "grayscale strategy requires an achromatic, strictly-ascending palette"
+            );
+            let levels: Vec<f32> = palette_rgb_f32.iter().map(|p| rgb_to_brightness(*p)).collect();
             let decomposer = PureSpreadGrayDecomposer::new(levels)
                 .unwrap()
                 .with_spread_ratio(spread_ratio);
-            run_decomposing(decomposer, rgb_to_brightness, noise_fn, matrix, inout);
+            build_decomposing(decomposer, rgb_to_brightness, noise_fn, matrix)
         }
         DecomposeStrategy::GrayOffsetBlend(distance) => {
-            let levels = grayscale_levels(palette);
+            assert!(
+                verify_grayscale_palette(palette),
+                "grayscale strategy requires an achromatic, strictly-ascending palette"
+            );
+            let levels: Vec<f32> = palette_rgb_f32.iter().map(|p| rgb_to_brightness(*p)).collect();
             let decomposer = OffsetBlendGrayDecomposer::new(levels)
                 .unwrap()
                 .with_distance(distance);
-            run_decomposing(decomposer, rgb_to_brightness, noise_fn, matrix, inout);
+            build_decomposing(decomposer, rgb_to_brightness, noise_fn, matrix)
         }
+    }
+}
+
+/// Top-level builder: select a noise closure type, then dispatch to
+/// `build_with_noise`. Each `NoiseSource` arm pins a concrete `N`; the
+/// `None` variant supplies a `fn`-pointer placeholder via turbofish.
+fn build_ditherer(
+    strategy_choice: &DecomposeStrategy,
+    palette: &[Rgb<u8>],
+    noise_choice: NoiseSource,
+    matrix: DynamicDiffusionMatrix,
+) -> Box<dyn DynDitherer<InOutType>> {
+    match noise_choice {
+        NoiseSource::Bayer(Some(max_depth)) => build_with_noise(
+            strategy_choice,
+            palette,
+            Some(move |x: usize, y: usize| epd_dither::noise::bayer(x, y, max_depth)),
+            matrix,
+        ),
+        NoiseSource::Bayer(None) => build_with_noise(
+            strategy_choice,
+            palette,
+            Some(|x: usize, y: usize| epd_dither::noise::bayer_inf(x, y)),
+            matrix,
+        ),
+        NoiseSource::InterleavedGradient => build_with_noise(
+            strategy_choice,
+            palette,
+            Some(|x: usize, y: usize| {
+                epd_dither::noise::interleaved_gradient_noise(x as f32, y as f32)
+            }),
+            matrix,
+        ),
+        NoiseSource::White => build_with_noise(
+            strategy_choice,
+            palette,
+            Some(|_x: usize, _y: usize| rand::rng().sample::<f32, _>(StandardUniform)),
+            matrix,
+        ),
+        NoiseSource::File(f) => build_with_noise(
+            strategy_choice,
+            palette,
+            Some(move |x: usize, y: usize| {
+                f.get_pixel(x as u32 % f.width(), y as u32 % f.height()).0[0]
+            }),
+            matrix,
+        ),
+        NoiseSource::None => build_with_noise::<fn(usize, usize) -> f32>(
+            strategy_choice,
+            palette,
+            None,
+            matrix,
+        ),
     }
 }
 
@@ -469,66 +531,14 @@ fn main() {
     for color in &dither_palette_u8 {
         println!("  #{:02X}{:02X}{:02X},", color[0], color[1], color[2]);
     }
-    let dither_palette_as_points: Vec<Point3<f32>> = dither_palette_u8
-        .iter()
-        .map(|c| {
-            let [r, g, b] = c.map(|x| (x as f32) / 255.0);
-            Point3::new(r, g, b)
-        })
-        .collect();
+    let dither_palette_rgb: Vec<Rgb<u8>> = dither_palette_u8.iter().map(|&c| Rgb(c)).collect();
     let (width, height) = (input.width() as usize, input.height() as usize);
     let output_width = input.width();
     let output_height = input.height();
     let mut inout = ImageSplit::new(input, IndexedBuffer::new(width, height)).unwrap();
-    let matrix = args.diffuse.to_boxed_matrix();
-    match args.noise {
-        NoiseSource::Bayer(Some(max_depth)) => run_strategy(
-            &args.strategy,
-            &dither_palette_as_points,
-            Some(move |x: usize, y: usize| epd_dither::noise::bayer(x, y, max_depth)),
-            &matrix,
-            &mut inout,
-        ),
-        NoiseSource::Bayer(None) => run_strategy(
-            &args.strategy,
-            &dither_palette_as_points,
-            Some(|x: usize, y: usize| epd_dither::noise::bayer_inf(x, y)),
-            &matrix,
-            &mut inout,
-        ),
-        NoiseSource::InterleavedGradient => run_strategy(
-            &args.strategy,
-            &dither_palette_as_points,
-            Some(|x: usize, y: usize| {
-                epd_dither::noise::interleaved_gradient_noise(x as f32, y as f32)
-            }),
-            &matrix,
-            &mut inout,
-        ),
-        NoiseSource::White => run_strategy(
-            &args.strategy,
-            &dither_palette_as_points,
-            Some(|_x: usize, _y: usize| rand::rng().sample::<f32, _>(StandardUniform)),
-            &matrix,
-            &mut inout,
-        ),
-        NoiseSource::File(f) => run_strategy(
-            &args.strategy,
-            &dither_palette_as_points,
-            Some(move |x: usize, y: usize| {
-                f.get_pixel(x as u32 % f.width(), y as u32 % f.height()).0[0]
-            }),
-            &matrix,
-            &mut inout,
-        ),
-        NoiseSource::None => run_strategy::<fn(usize, usize) -> f32, _, _>(
-            &args.strategy,
-            &dither_palette_as_points,
-            None,
-            &matrix,
-            &mut inout,
-        ),
-    }
+    let matrix = args.diffuse.to_dynamic_matrix();
+    let ditherer = build_ditherer(&args.strategy, &dither_palette_rgb, args.noise, matrix);
+    ditherer.dyn_dither_into(&mut inout);
     let mut output = png::Encoder::new(
         std::io::BufWriter::new(std::fs::File::create(args.output_file).unwrap()),
         output_width,
