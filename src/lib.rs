@@ -13,6 +13,8 @@ mod helpers;
 pub mod image_adapter;
 pub mod noise;
 pub mod palette;
+#[cfg(feature = "image")]
+pub mod palette_image;
 pub mod spectra6;
 
 pub use decomposer_input::DecomposerInputColor;
