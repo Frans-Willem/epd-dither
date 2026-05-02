@@ -1,3 +1,5 @@
+#[cfg(feature = "alloc")]
+use crate::dither::image_traits::{ImageReader, ImageSize, ImageWriter};
 use core::ops::{AddAssign, Div, Mul};
 
 pub trait PixelStrategy {
@@ -9,24 +11,16 @@ pub trait PixelStrategy {
         + Div<usize, Output = Self::QuantizationError>
         + AddAssign<Self::QuantizationError>;
 
+    /// Quantize one pixel. `(x, y)` lets the strategy consult positional
+    /// state — typically a noise source for dithering — without abusing
+    /// [`ImageReader`] to bundle non-pixel data into the source value.
     fn quantize(
         &self,
         source: Self::Source,
+        x: usize,
+        y: usize,
         error: Self::QuantizationError,
     ) -> (Self::Target, Self::QuantizationError);
-}
-
-pub trait ImageSize {
-    fn width(&self) -> usize;
-    fn height(&self) -> usize;
-}
-
-pub trait ImageReader<T> {
-    fn get_pixel(&self, x: usize, y: usize) -> T;
-}
-
-pub trait ImageWriter<T> {
-    fn put_pixel(&mut self, x: usize, y: usize, pixel: T);
 }
 
 #[cfg(feature = "alloc")]
@@ -132,7 +126,7 @@ pub fn diffuse_dither<
             // next row.
             let error: S::QuantizationError =
                 core::mem::take(&mut errors[x + ((y % errors_height) * width)]);
-            let (target, error) = strategy.quantize(source, error / error_divisor);
+            let (target, error) = strategy.quantize(source, x, y, error / error_divisor);
             inout.put_pixel(x, y, target);
             // Diffuse the error
             for (dx, dy, mul) in diffuse_targets {

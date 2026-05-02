@@ -8,10 +8,14 @@ The README/documentation images predate the naive-decomposer rework. Regenerate 
 ### Compare noise sources
 Document the differences between white noise, Bayer matrices, interleaved gradient noise, and blue noise — when each is preferable and what artefacts each introduces.
 
-## Code
+## Library
 
-### Audit dither.rs vs library boundary against epd-photoframe-server
-Now that `epd-photoframe-server` (sibling crate) consumes `epd-dither` as a library, walk through `src/bin/dither.rs` and identify functionality that's currently CLI-private but would be useful as library API. Likely candidates: parsing decomposition strategies from strings (the `DecomposeStrategy` enum and its `value_enum` plumbing), RGB → brightness/luminance helpers, anything else duplicated between the two crates. Move what makes sense up into `epd-dither` and reduce duplication.
+### Sub-quantum dither for image-sampled noise
+Image-sampled noise sources (`blue`, `file:`) and Bayer matrices are quantized to a finite step — 1/2^16 for the bundled blue tile, 1/4^N for `bayer:N`, unknown for `file:`. Without a sub-quantum perturbation the cumulative-weight selection lands on the same index across whole bands of input. Add `+ rand_uniform * step` (gated on the `rand` feature) when sampling. Open questions:
+
+- Bit-depth detection for `NoiseSource::File`: the source depth is gone after `to_luma32f`. Options: hardcode 16 with an override (e.g. `file:PATH:8`); probe via `image::ImageReader::with_guessed_format()` and map to native depth before the float conversion; or apply a fixed perturbation and accept over-perturbing 8-bit inputs.
+- Should `bayer:N` get the same treatment (step = 1/4^N)?
+- Keep a deterministic path so regression baselines don't churn under the `rand`-disabled build.
 
 ## Measurement
 

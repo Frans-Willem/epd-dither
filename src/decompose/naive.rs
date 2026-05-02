@@ -1,21 +1,51 @@
-/// 6-colour palette as used by the `epdoptimize` toolchain. The points do
-/// **not** form a convex octahedron, so this palette is only valid with
-/// [`NaiveDecomposer`] — feeding it to `OctahedronDecomposer` produces
-/// either a constructor failure or incorrect barycentric coordinates.
-pub const EPDOPTIMIZE: [[u8; 3]; 6] = [
-    [0x19, 0x1E, 0x21],
-    [0xe8, 0xe8, 0xe8],
-    [0xef, 0xde, 0x44],
-    [0xb2, 0x13, 0x18],
-    [0x21, 0x57, 0xba],
-    [0x12, 0x5f, 0x20],
-];
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub enum NaiveDecomposerStrategy {
+    #[default]
+    FavorMix,
+    FavorDominant,
+    /// Blend over all containing tetrahedra with weights
+    /// `α_i ∝ (∏_j w_{i,j})^p`. `p = 0` averages equally; higher `p`
+    /// concentrates on the most-interior tetrahedron. See
+    /// `documentation/tetra-blend-research.md`.
+    TetraBlend(u32),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InvalidNaiveDecomposerStrategy;
+
+impl core::fmt::Display for InvalidNaiveDecomposerStrategy {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("invalid naive decomposer-strategy name")
+    }
+}
+
+impl core::error::Error for InvalidNaiveDecomposerStrategy {}
+
+impl core::str::FromStr for NaiveDecomposerStrategy {
+    type Err = InvalidNaiveDecomposerStrategy;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "mix" => Ok(Self::FavorMix),
+            "dominant" => Ok(Self::FavorDominant),
+            "blend" => Ok(Self::TetraBlend(1)),
+            _ if s.starts_with("blend:") => {
+                let p = s["blend:".len()..]
+                    .parse::<u32>()
+                    .map_err(|_| InvalidNaiveDecomposerStrategy)?;
+                Ok(Self::TetraBlend(p))
+            }
+            _ => Err(InvalidNaiveDecomposerStrategy),
+        }
+    }
+}
 
 #[cfg(feature = "alloc")]
-pub use alloc_impl::{NaiveDecomposer, NaiveDecomposerStrategy};
+pub use alloc_impl::NaiveDecomposer;
 
 #[cfg(feature = "alloc")]
 mod alloc_impl {
+    use super::NaiveDecomposerStrategy;
     use crate::barycentric::line::LineProjector;
     use crate::barycentric::tetrahedron::TetrahedronProjector;
     use crate::barycentric::triangle::TriangleProjector;
@@ -28,18 +58,6 @@ mod alloc_impl {
     };
     use num_traits::identities::{One, Zero};
     use num_traits::zero;
-
-    #[derive(Copy, Clone, Debug, Default)]
-    pub enum NaiveDecomposerStrategy {
-        #[default]
-        FavorMix,
-        FavorDominant,
-        /// Blend over all containing tetrahedra with weights
-        /// `α_i ∝ (∏_j w_{i,j})^p`. `p = 0` averages equally; higher `p`
-        /// concentrates on the most-interior tetrahedron. See
-        /// `documentation/tetra-blend-research.md`.
-        TetraBlend(u32),
-    }
 
     pub struct NaiveDecomposer<T: Scalar + ComplexField> {
         num_colors: usize,
