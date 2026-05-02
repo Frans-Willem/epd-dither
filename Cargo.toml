@@ -13,7 +13,7 @@ with-binaries = [
 ]
 alloc = []
 clap = ["dep:clap"]
-image = ["dep:image"]
+image = ["dep:image", "alloc"]
 rand = ["dep:rand"]
 
 [[bin]]

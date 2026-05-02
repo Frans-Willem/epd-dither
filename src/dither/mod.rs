@@ -6,7 +6,10 @@ pub mod ditherer;
 pub mod image_traits;
 
 #[cfg(feature = "alloc")]
-pub use decomposing::{DecomposedQuantizationError, DecomposingDitherStrategy};
+pub use decomposing::{
+    DecomposeStrategy, DecomposedQuantizationError, DecomposingDitherStrategy,
+    InvalidDecomposeStrategy,
+};
 #[cfg(feature = "alloc")]
 pub use ditherer::BundledDitherer;
 pub use ditherer::{Ditherer, DynDitherer};

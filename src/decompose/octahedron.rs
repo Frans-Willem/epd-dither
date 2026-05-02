@@ -75,13 +75,43 @@ pub struct OctahedronDecomposer<T: Scalar + ComplexField> {
     strategy: OctahedronDecomposerAxisStrategy,
 }
 
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub enum OctahedronDecomposerAxisStrategy {
     Axis(usize),
     #[default]
     Closest,
     Furthest,
     Average,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InvalidOctahedronDecomposerAxisStrategy;
+
+impl core::fmt::Display for InvalidOctahedronDecomposerAxisStrategy {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("invalid octahedron axis-strategy name")
+    }
+}
+
+impl core::error::Error for InvalidOctahedronDecomposerAxisStrategy {}
+
+impl core::str::FromStr for OctahedronDecomposerAxisStrategy {
+    type Err = InvalidOctahedronDecomposerAxisStrategy;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "closest" => Ok(Self::Closest),
+            "furthest" => Ok(Self::Furthest),
+            "average" => Ok(Self::Average),
+            _ if s.starts_with("axis:") => {
+                let n = s["axis:".len()..]
+                    .parse::<usize>()
+                    .map_err(|_| InvalidOctahedronDecomposerAxisStrategy)?;
+                Ok(Self::Axis(n))
+            }
+            _ => Err(InvalidOctahedronDecomposerAxisStrategy),
+        }
+    }
 }
 
 impl<T: Scalar> OctahedronDecomposerAxis<T>

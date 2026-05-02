@@ -8,7 +8,42 @@
 //! When the read side and write side need different concrete types, pair
 //! them with [`crate::dither::ImageSplit`].
 
+use crate::decomposer_input::DecomposerInputColor;
 use crate::dither::image_traits::{ImageReader, ImageSize, ImageWriter};
+use nalgebra::geometry::Point3;
+
+impl DecomposerInputColor for image::Rgb<f32> {
+    fn to_point(&self) -> Point3<f32> {
+        let [r, g, b] = self.0;
+        Point3::new(r, g, b)
+    }
+    fn brightness(&self) -> f32 {
+        let [r, g, b] = self.0;
+        0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+    fn is_grayscale(&self) -> bool {
+        let [r, g, b] = self.0;
+        r == g && g == b
+    }
+}
+
+impl DecomposerInputColor for image::Rgb<u8> {
+    fn to_point(&self) -> Point3<f32> {
+        let [r, g, b] = self.0;
+        Point3::new(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0)
+    }
+    fn brightness(&self) -> f32 {
+        let [r, g, b] = self.0;
+        let r = r as f32 / 255.0;
+        let g = g as f32 / 255.0;
+        let b = b as f32 / 255.0;
+        0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+    fn is_grayscale(&self) -> bool {
+        let [r, g, b] = self.0;
+        r == g && g == b
+    }
+}
 
 impl<I> ImageSize for I
 where

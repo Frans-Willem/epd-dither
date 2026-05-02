@@ -24,8 +24,8 @@ use nalgebra::DVector;
 /// per-component quantization error; whether and how that error is propagated
 /// is the caller's choice via the [`DiffusionMatrix`](crate::dither::diffusion_matrix::DiffusionMatrix)
 /// passed to [`diffuse_dither`](crate::dither::diffuse::diffuse_dither)
-/// (use [`NoDiffuse`](crate::dither::diffusion_matrix::NoDiffuse) to skip
-/// diffusion entirely).
+/// (use [`NO_DIFFUSE`](crate::dither::diffusion_matrix::NO_DIFFUSE) to
+/// skip diffusion entirely).
 pub struct DecomposingDitherStrategy<D, F, N, Src> {
     pub decomposer: D,
     pub convert: F,
@@ -135,5 +135,92 @@ where
         let mut error = decomposed;
         error[index] -= 1.0;
         (index, DecomposedQuantizationError(Some(error)))
+    }
+}
+
+/// Library-grade enum equivalent of the binary's `--strategy` argument:
+/// names a built-in decomposition strategy. The factory layer (see
+/// [`crate::factory`], `image` feature) maps each variant to the
+/// corresponding decomposer + convert function.
+///
+/// `Octahedron` and `Naive` carry the inner decomposer's strategy enum
+/// directly, so they expose every axis/blend variant the inner enum
+/// supports — not just the ones with a string spelling in `FromStr`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum DecomposeStrategy {
+    Octahedron(crate::decompose::octahedron::OctahedronDecomposerAxisStrategy),
+    Naive(crate::decompose::naive::NaiveDecomposerStrategy),
+    /// No-spread 1-D grayscale; equivalent under any of the gray decomposers.
+    /// Routed through `OffsetBlendGrayDecomposer` with distance = 0.
+    Grayscale,
+    /// `PureSpreadGrayDecomposer` with the given spread ratio in [0, 1].
+    GrayPureSpread(f32),
+    /// `OffsetBlendGrayDecomposer` with the given offset in input-space units.
+    GrayOffsetBlend(f32),
+}
+
+impl DecomposeStrategy {
+    pub const LONG_HELP: &'static str = concat!(
+        "Decomposition strategy.\n\n",
+        "Accepted values:\n",
+        " octahedron-closest        Octahedron, pick closest axis (default)\n",
+        " octahedron-furthest       Octahedron, pick furthest axis\n",
+        " naive-mix                 Naive, favour mixed weights\n",
+        " naive-dominant            Naive, favour dominant component\n",
+        " naive-blend[:<p>]         Naive, smooth blend (default p=1)\n",
+        " grayscale                 1-D grayscale, no spread\n",
+        " gray-pure-spread:<r>      Pure-spread grayscale, r in [0, 1]\n",
+        " gray-offset-blend:<r>     Offset-blend grayscale, r in [0, 1]\n\n",
+        "Examples:\n",
+        " --strategy octahedron-closest\n",
+        " --strategy grayscale\n",
+        " --strategy gray-pure-spread:0.25\n",
+        " --strategy naive-blend:2\n",
+    );
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InvalidDecomposeStrategy;
+
+impl core::fmt::Display for InvalidDecomposeStrategy {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("invalid decompose-strategy name")
+    }
+}
+
+impl core::error::Error for InvalidDecomposeStrategy {}
+
+fn parse_unit_interval(s: &str) -> Result<f32, InvalidDecomposeStrategy> {
+    let v = s.parse::<f32>().map_err(|_| InvalidDecomposeStrategy)?;
+    if !(0.0..=1.0).contains(&v) {
+        return Err(InvalidDecomposeStrategy);
+    }
+    Ok(v)
+}
+
+impl core::str::FromStr for DecomposeStrategy {
+    type Err = InvalidDecomposeStrategy;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s == "grayscale" {
+            return Ok(Self::Grayscale);
+        }
+        if let Some(rest) = s.strip_prefix("octahedron-") {
+            return Ok(Self::Octahedron(
+                rest.parse().map_err(|_| InvalidDecomposeStrategy)?,
+            ));
+        }
+        if let Some(rest) = s.strip_prefix("naive-") {
+            return Ok(Self::Naive(
+                rest.parse().map_err(|_| InvalidDecomposeStrategy)?,
+            ));
+        }
+        if let Some(rest) = s.strip_prefix("gray-pure-spread:") {
+            return Ok(Self::GrayPureSpread(parse_unit_interval(rest)?));
+        }
+        if let Some(rest) = s.strip_prefix("gray-offset-blend:") {
+            return Ok(Self::GrayOffsetBlend(parse_unit_interval(rest)?));
+        }
+        Err(InvalidDecomposeStrategy)
     }
 }
