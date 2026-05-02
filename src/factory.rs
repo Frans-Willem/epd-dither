@@ -78,13 +78,13 @@ fn build_decomposing<D, F, Src, N, T>(
     decomposer: D,
     convert: F,
     noise_fn: Option<N>,
-    matrix: impl DiffusionMatrix + 'static,
-) -> Box<dyn DynDitherer<T>>
+    matrix: impl DiffusionMatrix + Send + Sync + 'static,
+) -> Box<dyn DynDitherer<T> + Send + Sync>
 where
-    D: Decomposer<f32> + 'static,
-    F: Fn(Src) -> D::Input + 'static,
+    D: Decomposer<f32> + Send + Sync + 'static,
+    F: Fn(Src) -> D::Input + Send + Sync + 'static,
     Src: 'static,
-    N: Fn(usize, usize) -> f32 + 'static,
+    N: Fn(usize, usize) -> f32 + Send + Sync + 'static,
     T: ImageSize + ImageReader<Src> + ImageWriter<usize> + ?Sized + 'static,
 {
     let strategy = DecomposingDitherStrategy::new(decomposer, convert);
@@ -98,12 +98,12 @@ fn build_with_noise<P, Q, N, T>(
     strategy: DecomposeStrategy,
     palette: &[Q],
     noise_fn: Option<N>,
-    matrix: impl DiffusionMatrix + 'static,
-) -> Result<Box<dyn DynDitherer<T>>, FactoryError>
+    matrix: impl DiffusionMatrix + Send + Sync + 'static,
+) -> Result<Box<dyn DynDitherer<T> + Send + Sync>, FactoryError>
 where
     P: DecomposerInputColor + 'static,
     Q: DecomposerInputColor,
-    N: Fn(usize, usize) -> f32 + 'static,
+    N: Fn(usize, usize) -> f32 + Send + Sync + 'static,
     T: ImageSize + ImageReader<P> + ImageWriter<usize> + ?Sized + 'static,
 {
     match strategy {
@@ -174,14 +174,21 @@ fn sample_luma_image(
         .0[0]
 }
 
-/// Build a `Box<dyn DynDitherer<T>>` from already-parsed configuration.
-/// Use [`parse_decompose_ditherer`] for the all-strings entry point.
+/// Build a `Box<dyn DynDitherer<T> + Send + Sync>` from already-parsed
+/// configuration. Use [`parse_decompose_ditherer`] for the all-strings
+/// entry point.
+///
+/// The returned trait object is `Send + Sync` so it can be moved into a
+/// long-lived shared owner (e.g. an `Arc` shared across worker threads).
+/// Every concrete piece the factory composes — built-in decomposers,
+/// closures with captured constants, [`RefDiffusionMatrix`] — already
+/// satisfies both auto traits.
 pub fn decompose_ditherer<P, Q, T>(
     strategy: DecomposeStrategy,
     noise: NoiseSource,
     palette: &[Q],
-    matrix: impl DiffusionMatrix + 'static,
-) -> Result<Box<dyn DynDitherer<T>>, FactoryError>
+    matrix: impl DiffusionMatrix + Send + Sync + 'static,
+) -> Result<Box<dyn DynDitherer<T> + Send + Sync>, FactoryError>
 where
     P: DecomposerInputColor + 'static,
     Q: DecomposerInputColor,
@@ -253,12 +260,15 @@ where
 /// hand off to [`decompose_ditherer`]. Generic over the source
 /// pixel type `P`; the palette entry type is fixed to `[u8; 3]` since
 /// that's what the [`Palette`] enum's slice accessor returns.
+///
+/// Returns `Box<dyn DynDitherer<T> + Send + Sync>` — see
+/// [`decompose_ditherer`] for the rationale.
 pub fn parse_decompose_ditherer<P, T>(
     strategy: &str,
     noise: &str,
     palette: &str,
     diffuse: &str,
-) -> Result<Box<dyn DynDitherer<T>>, FactoryError>
+) -> Result<Box<dyn DynDitherer<T> + Send + Sync>, FactoryError>
 where
     P: DecomposerInputColor + 'static,
     T: ImageSize + ImageReader<P> + ImageWriter<usize> + ?Sized + 'static,
