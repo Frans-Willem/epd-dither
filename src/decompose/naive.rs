@@ -1,16 +1,3 @@
-/// 6-colour palette as used by the `epdoptimize` toolchain. The points do
-/// **not** form a convex octahedron, so this palette is only valid with
-/// [`NaiveDecomposer`] — feeding it to `OctahedronDecomposer` produces
-/// either a constructor failure or incorrect barycentric coordinates.
-pub const EPDOPTIMIZE: [[u8; 3]; 6] = [
-    [0x19, 0x1E, 0x21],
-    [0xe8, 0xe8, 0xe8],
-    [0xef, 0xde, 0x44],
-    [0xb2, 0x13, 0x18],
-    [0x21, 0x57, 0xba],
-    [0x12, 0x5f, 0x20],
-];
-
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub enum NaiveDecomposerStrategy {
     #[default]

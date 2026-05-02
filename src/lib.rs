@@ -15,7 +15,6 @@ pub mod noise;
 pub mod palette;
 #[cfg(feature = "image")]
 pub mod palette_image;
-pub mod spectra6;
 
 pub use decomposer_input::DecomposerInputColor;
 pub use decompose::Decomposer;
