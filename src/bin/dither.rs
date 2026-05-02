@@ -1,7 +1,7 @@
 use clap::Parser;
 use epd_dither::Palette;
 use epd_dither::dither::diffusion_matrix::DiffuseMethod;
-use epd_dither::dither::{DecomposeStrategy, DynDitherer, ImageSplit};
+use epd_dither::dither::{DecomposeStrategy, DynDitherer, ImageCombinedRW};
 use epd_dither::factory::decompose_ditherer;
 use epd_dither::noise::NoiseSource;
 use epd_dither::palette_image::{PaletteImage, VerifiedPalette};
@@ -55,7 +55,7 @@ fn main() {
         output_height,
         VerifiedPalette::new(output_palette).unwrap(),
     );
-    let mut inout = ImageSplit::new(input, writer).unwrap();
+    let mut inout = ImageCombinedRW::new(input, writer).unwrap();
 
     let palette_rgb: Vec<Rgb<u8>> = dither_palette.iter().map(|&c| Rgb(c)).collect();
     let ditherer: Box<dyn DynDitherer<_>> = decompose_ditherer::<Rgb<f32>, Rgb<u8>, _>(

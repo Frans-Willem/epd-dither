@@ -6,7 +6,7 @@
 //! [`ImageReader`] (and any [`image::GenericImage`] as both reader and
 //! [`ImageWriter`]) directly — no wrapper required for the in-place case.
 //! When the read side and write side need different concrete types, pair
-//! them with [`crate::dither::ImageSplit`].
+//! them with [`crate::dither::ImageCombinedRW`].
 
 use crate::decomposer_input::DecomposerInputColor;
 use crate::dither::image_traits::{ImageReader, ImageSize, ImageWriter};

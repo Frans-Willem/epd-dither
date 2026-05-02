@@ -31,11 +31,6 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use nalgebra::geometry::Point3;
 
-/// Embedded blue-noise tile (HDR_L_0 from the void-and-cluster family),
-/// decoded on demand inside the factory when the `image` feature is on.
-#[cfg(feature = "image")]
-const BLUE_NOISE_PNG: &[u8] = include_bytes!("../HDR_L_0.png");
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FactoryError {
     InvalidStrategy(InvalidDecomposeStrategy),
@@ -132,24 +127,6 @@ where
             Ok(build_decomposing(
                 decomposer,
                 |p: P| p.to_point(),
-                noise_fn,
-                matrix,
-            ))
-        }
-        DecomposeStrategy::Grayscale => {
-            if !verify_grayscale_palette(palette) {
-                return Err(FactoryError::NonGrayscalePalette);
-            }
-            // Both gray decomposers reduce to plain bracket decomposition
-            // at default parameter; OffsetBlend takes its early-out path
-            // while PureSpread runs the full asymmetric-spread arithmetic,
-            // so route the no-spread case through OffsetBlend.
-            let levels: Vec<f32> = palette.iter().map(|q| q.brightness()).collect();
-            let decomposer = OffsetBlendGrayDecomposer::new(levels)
-                .ok_or(FactoryError::DecomposerBuildFailed)?;
-            Ok(build_decomposing(
-                decomposer,
-                |p: P| p.brightness(),
                 noise_fn,
                 matrix,
             ))
@@ -259,7 +236,7 @@ where
         }
         #[cfg(feature = "image")]
         NoiseSource::Blue => {
-            let img = image::load_from_memory(BLUE_NOISE_PNG)
+            let img = image::load_from_memory(crate::noise::BLUE_NOISE_PNG)
                 .map_err(|_| FactoryError::NoiseImageError)?
                 .to_luma32f();
             build_with_noise(

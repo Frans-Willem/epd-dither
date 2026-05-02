@@ -2,6 +2,12 @@ use num_traits::float::FloatCore;
 use num_traits::identities::Zero;
 use num_traits::zero;
 
+/// Embedded blue-noise tile (HDR_L_0 from the void-and-cluster family),
+/// decoded on demand by callers (e.g. [`crate::factory`]) when the `image`
+/// feature is on.
+#[cfg(feature = "image")]
+pub(crate) const BLUE_NOISE_PNG: &[u8] = include_bytes!("../HDR_L_0.png");
+
 pub fn interleaved_gradient_noise<F>(x: F, y: F) -> F
 where
     F: FloatCore + From<f32>,

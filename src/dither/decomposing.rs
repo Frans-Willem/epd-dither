@@ -1,7 +1,12 @@
+#[cfg(feature = "alloc")]
 use crate::Decomposer;
+#[cfg(feature = "alloc")]
 use crate::dither::diffuse::PixelStrategy;
+#[cfg(feature = "alloc")]
 use core::marker::PhantomData;
+#[cfg(feature = "alloc")]
 use core::ops::{AddAssign, Div, Mul};
+#[cfg(feature = "alloc")]
 use nalgebra::DVector;
 
 /// Pixel strategy that decomposes a colour-space input into per-palette
@@ -12,8 +17,7 @@ use nalgebra::DVector;
 ///
 /// The source pixel type `Src` is converted into the decomposer's input by
 /// `convert`. Positional noise is queried inside `quantize` from the
-/// strategy's own `noise` field, which avoids smuggling noise through
-/// [`ImageReader`] as a tuple alongside the pixel.
+/// strategy's own `noise` field.
 ///
 /// `noise` is `Option<N>` where `N: Fn(usize, usize) -> f32`: `None` means
 /// no noise is applied (dominant-component selection); `Some(n)` means
@@ -26,6 +30,7 @@ use nalgebra::DVector;
 /// passed to [`diffuse_dither`](crate::dither::diffuse::diffuse_dither)
 /// (use [`NO_DIFFUSE`](crate::dither::diffusion_matrix::NO_DIFFUSE) to
 /// skip diffusion entirely).
+#[cfg(feature = "alloc")]
 pub struct DecomposingDitherStrategy<D, F, N, Src> {
     pub decomposer: D,
     pub convert: F,
@@ -38,8 +43,10 @@ pub struct DecomposingDitherStrategy<D, F, N, Src> {
 /// type. Bare `fn(usize, usize) -> f32` accepts any later [`with_noise`]
 /// override that coerces to a fn pointer; capturing closures need an
 /// explicit turbofish on `with_noise`.
+#[cfg(feature = "alloc")]
 type DefaultNoiseFn = fn(usize, usize) -> f32;
 
+#[cfg(feature = "alloc")]
 impl<D, F, Src> DecomposingDitherStrategy<D, F, DefaultNoiseFn, Src> {
     pub fn new(decomposer: D, convert: F) -> Self {
         Self {
@@ -51,6 +58,7 @@ impl<D, F, Src> DecomposingDitherStrategy<D, F, DefaultNoiseFn, Src> {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<D, F, N, Src> DecomposingDitherStrategy<D, F, N, Src> {
     pub fn with_noise<N2>(self, noise: N2) -> DecomposingDitherStrategy<D, F, N2, Src>
     where
@@ -65,9 +73,11 @@ impl<D, F, N, Src> DecomposingDitherStrategy<D, F, N, Src> {
     }
 }
 
+#[cfg(feature = "alloc")]
 #[derive(Clone, Default)]
 pub struct DecomposedQuantizationError(Option<DVector<f32>>);
 
+#[cfg(feature = "alloc")]
 impl Mul<usize> for DecomposedQuantizationError {
     type Output = Self;
     fn mul(self, rhs: usize) -> Self {
@@ -75,6 +85,7 @@ impl Mul<usize> for DecomposedQuantizationError {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl Div<usize> for DecomposedQuantizationError {
     type Output = Self;
     fn div(self, rhs: usize) -> Self {
@@ -82,6 +93,7 @@ impl Div<usize> for DecomposedQuantizationError {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl AddAssign<DecomposedQuantizationError> for DecomposedQuantizationError {
     fn add_assign(&mut self, rhs: Self) {
         self.0 = match (core::mem::take(&mut self.0), rhs.0) {
@@ -92,6 +104,7 @@ impl AddAssign<DecomposedQuantizationError> for DecomposedQuantizationError {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<D, F, N, Src> PixelStrategy for DecomposingDitherStrategy<D, F, N, Src>
 where
     D: Decomposer<f32>,
@@ -146,13 +159,14 @@ where
 /// `Octahedron` and `Naive` carry the inner decomposer's strategy enum
 /// directly, so they expose every axis/blend variant the inner enum
 /// supports — not just the ones with a string spelling in `FromStr`.
+///
+/// No-spread 1-D grayscale is `GrayOffsetBlend(0.0)`, which the offset-blend
+/// decomposer collapses to plain bracket decomposition via its `distance <= 0`
+/// early-out. The string `"grayscale"` parses to that value.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum DecomposeStrategy {
     Octahedron(crate::decompose::octahedron::OctahedronDecomposerAxisStrategy),
     Naive(crate::decompose::naive::NaiveDecomposerStrategy),
-    /// No-spread 1-D grayscale; equivalent under any of the gray decomposers.
-    /// Routed through `OffsetBlendGrayDecomposer` with distance = 0.
-    Grayscale,
     /// `PureSpreadGrayDecomposer` with the given spread ratio in [0, 1].
     GrayPureSpread(f32),
     /// `OffsetBlendGrayDecomposer` with the given offset in input-space units.
@@ -203,7 +217,7 @@ impl core::str::FromStr for DecomposeStrategy {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s == "grayscale" {
-            return Ok(Self::Grayscale);
+            return Ok(Self::GrayOffsetBlend(0.0));
         }
         if let Some(rest) = s.strip_prefix("octahedron-") {
             return Ok(Self::Octahedron(

@@ -1,5 +1,5 @@
 //! Minimal image-shaped reader/writer traits used by the dither pipeline,
-//! plus an [`ImageSplit`] combiner. None of these depend on the `image`
+//! plus an [`ImageCombinedRW`] combiner. None of these depend on the `image`
 //! Cargo feature; that crate's adapter lives in
 //! [`crate::image_adapter`] and provides blanket impls of these traits
 //! for [`image::GenericImage`] / [`image::GenericImageView`].
@@ -23,15 +23,15 @@ pub trait ImageWriter<T> {
 /// shape for paletted dithering: read `Rgb<f32>` (or whatever), write
 /// `usize` palette indices.
 ///
-/// Both sides must report matching dimensions; [`ImageSplit::new`] checks
+/// Both sides must report matching dimensions; [`ImageCombinedRW::new`] checks
 /// this and returns `None` on mismatch. Reported size on the combined
 /// value comes from the reader.
-pub struct ImageSplit<R, W> {
+pub struct ImageCombinedRW<R, W> {
     pub reader: R,
     pub writer: W,
 }
 
-impl<R, W> ImageSplit<R, W>
+impl<R, W> ImageCombinedRW<R, W>
 where
     R: ImageSize,
     W: ImageSize,
@@ -45,7 +45,7 @@ where
     }
 }
 
-impl<R, W> ImageSize for ImageSplit<R, W>
+impl<R, W> ImageSize for ImageCombinedRW<R, W>
 where
     R: ImageSize,
 {
@@ -57,7 +57,7 @@ where
     }
 }
 
-impl<R, W, T> ImageReader<T> for ImageSplit<R, W>
+impl<R, W, T> ImageReader<T> for ImageCombinedRW<R, W>
 where
     R: ImageReader<T>,
 {
@@ -66,7 +66,7 @@ where
     }
 }
 
-impl<R, W, T> ImageWriter<T> for ImageSplit<R, W>
+impl<R, W, T> ImageWriter<T> for ImageCombinedRW<R, W>
 where
     W: ImageWriter<T>,
 {

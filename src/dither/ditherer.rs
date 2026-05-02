@@ -59,14 +59,16 @@ where
 /// single `BundledDitherer<S, M>` value works against any compatible
 /// `InOut`. Type-erased use is via the `DynDitherer<InOut>` blanket impl
 /// — `Box<dyn DynDitherer<MyInOut>>` works directly.
-#[cfg(feature = "alloc")]
+///
+/// The struct itself is plain data (no alloc); only the
+/// [`Ditherer`] impl is alloc-gated, since it dispatches through
+/// [`diffuse_dither`](crate::dither::diffuse::diffuse_dither).
 pub struct BundledDitherer<S, M> {
     pub strategy: S,
     pub matrix: M,
     pub serpentine: bool,
 }
 
-#[cfg(feature = "alloc")]
 impl<S, M> BundledDitherer<S, M> {
     /// Defaults to serpentine traversal — matches every existing call site
     /// in the binary. Override with [`with_serpentine`](Self::with_serpentine).
