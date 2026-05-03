@@ -28,3 +28,11 @@ epdoptimize was used with the default parameters, but with the same color palett
 Further reading
 ---------------
 - [Decomposition methods and picking strategies](./docs/decomposition.md) — what each `Decomposer` does, when it applies, and how the strategies trade off when more than one valid decomposition exists.
+
+License
+-------
+Source code is licensed under version 3 of the GNU Affero General
+Public License (`AGPL-3.0-only`). Full text in [LICENSE](./LICENSE).
+
+Bundled third-party assets carry their own licences — see
+[NOTICE](./NOTICE) and the per-asset files in [LICENSES/](./LICENSES).
