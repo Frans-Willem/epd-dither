@@ -151,7 +151,7 @@ where
         let colors: &[Point3<T>; 6] = colors.try_into().ok()?;
         let opposite_map = OctahedronProjector::find_opposites(colors)?;
         let axis: [OctahedronDecomposerAxis<T>; 3] =
-            crate::helpers::opt_array_transpose(core::array::from_fn(|axis_index| {
+            crate::array_util::opt_array_transpose(core::array::from_fn(|axis_index| {
                 let vertex_index_to_color: [usize; 6] = [
                     opposite_map[axis_index % opposite_map.len()].0,
                     opposite_map[axis_index % opposite_map.len()].1,

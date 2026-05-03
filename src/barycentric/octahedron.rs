@@ -45,7 +45,7 @@ where
          * cyclical order
          */
         let wedges: [TetrahedronProjector<T>; 4] =
-            crate::helpers::opt_array_transpose(core::array::from_fn(|i| {
+            crate::array_util::opt_array_transpose(core::array::from_fn(|i| {
                 TetrahedronProjector::new([
                     vertices[0].clone(),
                     vertices[1].clone(),
@@ -54,7 +54,7 @@ where
                 ])
             }))?;
         let faces: [TriangleProjector<T>; 8] =
-            crate::helpers::opt_array_transpose(core::array::from_fn(|i| {
+            crate::array_util::opt_array_transpose(core::array::from_fn(|i| {
                 // First four faces go from north, rest from south
                 let pole = i / 4;
                 TriangleProjector::new([
@@ -65,7 +65,7 @@ where
             }))?;
 
         let edges: [LineProjector<T>; 12] =
-            crate::helpers::opt_array_transpose(core::array::from_fn(|i| {
+            crate::array_util::opt_array_transpose(core::array::from_fn(|i| {
                 // First four edges go from north, rest from south
                 let pole_index = i / 4;
                 let equator_index = i % 4;

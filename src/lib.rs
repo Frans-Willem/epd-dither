@@ -7,7 +7,7 @@ pub mod decompose;
 pub mod dither;
 #[cfg(feature = "alloc")]
 pub mod registry;
-mod helpers;
+mod array_util;
 #[cfg(feature = "image")]
 pub mod image;
 pub mod noise;

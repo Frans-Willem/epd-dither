@@ -90,7 +90,7 @@ where
     pub fn new(vertices: [Point3<T>; 3]) -> Option<Self> {
         let normal_project = TriangleProjector::new(vertices.clone())?;
         let lines: [LineProjector<T>; 3] =
-            crate::helpers::opt_array_transpose(core::array::from_fn(|i| {
+            crate::array_util::opt_array_transpose(core::array::from_fn(|i| {
                 LineProjector::new([vertices[(i + 1) % 3].clone(), vertices[(i + 2) % 3].clone()])
             }))?;
         let vertices: Matrix3<T> = Matrix3::from_columns(&vertices.map(|x| x.coords));
