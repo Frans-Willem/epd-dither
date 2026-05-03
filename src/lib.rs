@@ -3,7 +3,6 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 pub mod barycentric;
-pub mod decomposer_input;
 pub mod decompose;
 pub mod dither;
 #[cfg(feature = "alloc")]
@@ -14,6 +13,5 @@ pub mod image;
 pub mod noise;
 pub mod palette;
 
-pub use decomposer_input::DecomposerInputColor;
-pub use decompose::Decomposer;
+pub use decompose::{Decomposer, DecomposerInputColor};
 pub use palette::Palette;

@@ -7,7 +7,7 @@
 //! entry (in the slice passed in). Image-using callers get default
 //! impls for `image::Rgb<u8>` / `image::Rgb<f32>` (see
 //! [`crate::image::adapter`], gated on the `image` feature); the
-//! [`[u8; 3]`](DecomposerInputColor) impl in [`crate::decomposer_input`] covers the
+//! [`[u8; 3]`](DecomposerInputColor) impl in [`crate::decompose::input`] covers the
 //! image-free case.
 //!
 //! [`NoiseSource::File`] and [`NoiseSource::Blue`] arms are gated on the
@@ -16,7 +16,7 @@
 //! [`parse_decompose_ditherer`].
 
 use crate::Decomposer;
-use crate::decomposer_input::DecomposerInputColor;
+use crate::decompose::DecomposerInputColor;
 use crate::decompose::gray::{OffsetBlendGrayDecomposer, PureSpreadGrayDecomposer};
 use crate::decompose::naive::NaiveDecomposer;
 use crate::decompose::octahedron::OctahedronDecomposer;

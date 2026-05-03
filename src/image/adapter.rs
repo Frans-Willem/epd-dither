@@ -8,7 +8,7 @@
 //! When the read side and write side need different concrete types, pair
 //! them with [`crate::dither::ImageCombinedRW`].
 
-use crate::decomposer_input::DecomposerInputColor;
+use crate::decompose::DecomposerInputColor;
 use crate::dither::image_traits::{ImageReader, ImageSize, ImageWriter};
 use nalgebra::geometry::Point3;
 
