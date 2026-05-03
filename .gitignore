@@ -29,3 +29,6 @@ target
 # Python virtualenv for calibration tooling (deps pinned in
 # calibration/requirements.txt; recreate with `python3 -m venv .venv`).
 /.venv/
+
+# Per-session marker written by the harness; not source.
+/SESSION_ID.txt
