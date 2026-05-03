@@ -20,12 +20,15 @@ target
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-# Regression-test scratch dirs. tests/regression-master/ is the committed
-# baseline; everything else is transient comparison output from
-# tests/regression.sh.
-/tests/regression-*/
-!/tests/regression-master/
+# Regression-test scratch. tests/regression/baseline/ is the committed
+# reference; anything else under tests/regression/ is transient
+# comparison output from scripts/regression.sh.
+/tests/regression/*/
+!/tests/regression/baseline/
 
 # Python virtualenv for calibration tooling (deps pinned in
 # calibration/requirements.txt; recreate with `python3 -m venv .venv`).
 /.venv/
+
+# Per-session marker written by the harness; not source.
+/SESSION_ID.txt

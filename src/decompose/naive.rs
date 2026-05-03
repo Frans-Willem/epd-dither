@@ -6,7 +6,7 @@ pub enum NaiveDecomposerStrategy {
     /// Blend over all containing tetrahedra with weights
     /// `α_i ∝ (∏_j w_{i,j})^p`. `p = 0` averages equally; higher `p`
     /// concentrates on the most-interior tetrahedron. See
-    /// `documentation/tetra-blend-research.md`.
+    /// `docs/tetra-blend-research.md`.
     TetraBlend(u32),
 }
 

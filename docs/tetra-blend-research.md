@@ -1,7 +1,7 @@
 # Smooth tetrahedron blending for `NaiveDecomposer`
 
 Research note. Background: see `TODO.md` ("Smooth tetrahedron blending in
-NaiveDecomposer") and `documentation/decomposition.md`.
+NaiveDecomposer") and `docs/decomposition.md`.
 
 ## Problem
 
@@ -120,4 +120,4 @@ into the output buffer. Final pass: one division per palette entry. Same
 The math says the output is correct (mean-preserving, non-negative,
 seam-free). What's left is whether the additional colour mixing helps or
 hurts perceived quality at typical viewing distance. Implement, run through
-`tests/regression.sh`, eyeball gradients.
+`scripts/regression.sh`, eyeball gradients.
