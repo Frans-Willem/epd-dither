@@ -6,7 +6,7 @@ use num_traits::zero;
 /// decoded on demand by callers (e.g. [`crate::factory`]) when the `image`
 /// feature is on.
 #[cfg(feature = "image")]
-pub(crate) const BLUE_NOISE_PNG: &[u8] = include_bytes!("../HDR_L_0.png");
+pub(crate) const BLUE_NOISE_PNG: &[u8] = include_bytes!("../assets/HDR_L_0.png");
 
 pub fn interleaved_gradient_noise<F>(x: F, y: F) -> F
 where

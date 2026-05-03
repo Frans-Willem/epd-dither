@@ -21,16 +21,22 @@ DITHER="target/release/dither"
 
 cargo build --release --bin dither >&2
 
-NOISES=(none bayer:8 bayer ign file:HDR_L_0.png)
+NOISES=(none bayer:8 bayer ign file:assets/HDR_L_0.png)
 
 run_dither() {
     local strategy="$1"
     local noise="$2"
     shift 2
-    # Sanitize for filename: replace : / . with _
+    # Sanitize for filename: replace : / . with _, but strip any directory
+    # prefix from `file:<path>` first so the slug stays anchored to the asset
+    # basename (otherwise moving the asset reshuffles all baseline filenames).
     local slug_strat="${strategy//:/_}"
     slug_strat="${slug_strat//./_}"
-    local slug_noise="${noise//:/_}"
+    local slug_noise="$noise"
+    if [[ "$slug_noise" == file:* ]]; then
+        slug_noise="file:$(basename "${slug_noise#file:}")"
+    fi
+    slug_noise="${slug_noise//:/_}"
     slug_noise="${slug_noise//\//_}"
     slug_noise="${slug_noise//./_}"
     local out="$OUT_DIR/${slug_strat}__${slug_noise}.png"
