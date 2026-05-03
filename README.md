@@ -31,9 +31,8 @@ Further reading
 
 License
 -------
-Source code is licensed under the GNU Affero General Public License,
-version 3 or any later version (`AGPL-3.0-or-later`). Full text in
-[LICENSE](./LICENSE).
+Source code is licensed under version 3 of the GNU Affero General
+Public License (`AGPL-3.0-only`). Full text in [LICENSE](./LICENSE).
 
 Bundled third-party assets carry their own licences — see
 [NOTICE](./NOTICE) and the per-asset files in [LICENSES/](./LICENSES).
