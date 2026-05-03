@@ -90,7 +90,7 @@ pub const EPDOPTIMIZE: [[u8; 3]; 6] = [
 ///
 /// Chosen as the default because its lightness spread (L* ≈ 11..89) most
 /// closely matches the legacy phone-camera-derived placeholder, easing
-/// regression-master continuity. For panel-realistic chromaticity prefer
+/// regression-baseline continuity. For panel-realistic chromaticity prefer
 /// [`SPECTRA6_D65_ADJUSTED`] (no clipping, narrower range).
 pub const SPECTRA6: [[u8; 3]; 6] = SPECTRA6_D65_BPC80_ADJUSTED;
 

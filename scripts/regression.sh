@@ -3,6 +3,11 @@
 # (strategy, deterministic-noise) combination and write the outputs to <out_dir>.
 # Re-run on two different revisions and `diff -r` (or sha256sum) the directories
 # to verify a refactor hasn't changed pixel output.
+#
+# The committed reference lives at tests/regression/baseline/. Anything else
+# under tests/regression/ is gitignored scratch — typical usage is
+# `scripts/regression.sh tests/regression/scratch && \
+#  diff -rq tests/regression/baseline tests/regression/scratch`.
 
 set -euo pipefail
 
