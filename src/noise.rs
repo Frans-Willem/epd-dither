@@ -3,7 +3,7 @@ use num_traits::identities::Zero;
 use num_traits::zero;
 
 /// Embedded blue-noise tile (HDR_L_0 from the void-and-cluster family),
-/// decoded on demand by callers (e.g. [`crate::factory`]) when the `image`
+/// decoded on demand by callers (e.g. [`crate::registry`]) when the `image`
 /// feature is on.
 #[cfg(feature = "image")]
 pub(crate) const BLUE_NOISE_PNG: &[u8] = include_bytes!("../assets/HDR_L_0.png");
@@ -59,8 +59,8 @@ where
 }
 
 /// Library-grade enum equivalent of the binary's `--noise` argument:
-/// names a positional noise source. The factory layer (see
-/// [`crate::factory`]) turns each variant into a concrete
+/// names a positional noise source. The registry layer (see
+/// [`crate::registry`]) turns each variant into a concrete
 /// `Fn(usize, usize) -> f32`. Variants that depend on a runtime image
 /// asset (`File`, `Blue`) are gated behind the `image` feature.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -73,7 +73,7 @@ pub enum NoiseSource {
     InterleavedGradient,
     #[cfg(feature = "rand")]
     White,
-    /// External noise image at the given path. Loaded by the factory.
+    /// External noise image at the given path. Loaded by the registry.
     #[cfg(feature = "image")]
     File(alloc::string::String),
     /// Built-in blue-noise tile bundled with the crate.

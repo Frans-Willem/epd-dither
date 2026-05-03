@@ -11,7 +11,7 @@
 //! image-free case.
 //!
 //! [`NoiseSource::File`] and [`NoiseSource::Blue`] arms are gated on the
-//! `image` feature — they decode an image — but the rest of the factory
+//! `image` feature — they decode an image — but the rest of the registry
 //! works without it, including the all-strings entry
 //! [`parse_decompose_ditherer`].
 
@@ -180,7 +180,7 @@ fn sample_luma_image(
 ///
 /// The returned trait object is `Send + Sync` so it can be moved into a
 /// long-lived shared owner (e.g. an `Arc` shared across worker threads).
-/// Every concrete piece the factory composes — built-in decomposers,
+/// Every concrete piece the registry composes — built-in decomposers,
 /// closures with captured constants, [`RefDiffusionMatrix`] — already
 /// satisfies both auto traits.
 pub fn decompose_ditherer<P, Q, T>(

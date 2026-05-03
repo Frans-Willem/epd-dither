@@ -6,7 +6,7 @@ pub mod barycentric;
 pub mod decompose;
 pub mod dither;
 #[cfg(feature = "alloc")]
-pub mod factory;
+pub mod registry;
 mod helpers;
 #[cfg(feature = "image")]
 pub mod image;

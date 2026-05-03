@@ -138,8 +138,8 @@ where
 }
 
 /// Library-grade enum equivalent of the binary's `--strategy` argument:
-/// names a built-in decomposition strategy. The factory layer (see
-/// [`crate::factory`], `image` feature) maps each variant to the
+/// names a built-in decomposition strategy. The registry layer (see
+/// [`crate::registry`], `image` feature) maps each variant to the
 /// corresponding decomposer + convert function.
 ///
 /// `Octahedron` and `Naive` carry the inner decomposer's strategy enum
