@@ -1,0 +1,15 @@
+epd-dither
+==========
+
+This crate ships one third-party asset, licensed independently of the
+crate source code. Per-asset licence text lives in `LICENSES/`.
+
+
+HDR_L_0.png
+-----------
+A 256×256 16-bit grayscale blue-noise tile from Christoph Peters'
+"Free blue noise textures" distribution
+(http://momentsingraphics.de/BlueNoise.html), generated using the
+void-and-cluster method [Ulichney 1993].
+Released into the public domain via Creative Commons CC0 1.0.
+License text: LICENSES/HDR_L_0.png.txt
