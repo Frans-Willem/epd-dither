@@ -9,7 +9,7 @@
 //!   entry as a sanity check.
 //!
 //! Default impls for `image::Rgb<u8>` and `image::Rgb<f32>` live in
-//! [`crate::image_adapter`] (gated on the `image` feature); other crates
+//! [`crate::image::adapter`] (gated on the `image` feature); other crates
 //! supply their own.
 
 use nalgebra::geometry::Point3;

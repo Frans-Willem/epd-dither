@@ -6,7 +6,7 @@
 //! is used both as a source pixel (read out of `T`) and as a palette
 //! entry (in the slice passed in). Image-using callers get default
 //! impls for `image::Rgb<u8>` / `image::Rgb<f32>` (see
-//! [`crate::image_adapter`], gated on the `image` feature); the
+//! [`crate::image::adapter`], gated on the `image` feature); the
 //! [`[u8; 3]`](DecomposerInputColor) impl in [`crate::decomposer_input`] covers the
 //! image-free case.
 //!

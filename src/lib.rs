@@ -10,11 +10,9 @@ pub mod dither;
 pub mod factory;
 mod helpers;
 #[cfg(feature = "image")]
-pub mod image_adapter;
+pub mod image;
 pub mod noise;
 pub mod palette;
-#[cfg(feature = "image")]
-pub mod palette_image;
 
 pub use decomposer_input::DecomposerInputColor;
 pub use decompose::Decomposer;

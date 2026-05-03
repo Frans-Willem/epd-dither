@@ -1,7 +1,7 @@
 //! Minimal image-shaped reader/writer traits used by the dither pipeline,
 //! plus an [`ImageCombinedRW`] combiner. None of these depend on the `image`
 //! Cargo feature; that crate's adapter lives in
-//! [`crate::image_adapter`] and provides blanket impls of these traits
+//! [`crate::image::adapter`] and provides blanket impls of these traits
 //! for [`image::GenericImage`] / [`image::GenericImageView`].
 
 pub trait ImageSize {

@@ -4,7 +4,7 @@ use epd_dither::dither::diffusion_matrix::DiffuseMethod;
 use epd_dither::dither::{DecomposeStrategy, DynDitherer, ImageCombinedRW};
 use epd_dither::factory::decompose_ditherer;
 use epd_dither::noise::NoiseSource;
-use epd_dither::palette_image::{PaletteImage, VerifiedPalette};
+use epd_dither::image::palette_image::{PaletteImage, VerifiedPalette};
 use image::Rgb;
 
 #[derive(Parser)]
