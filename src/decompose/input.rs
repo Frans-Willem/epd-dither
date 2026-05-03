@@ -1,6 +1,6 @@
-//! Pixel-color trait used by the dither factory: any type implementing
+//! Pixel-color trait used by the dither registry: any type implementing
 //! [`DecomposerInputColor`] can stand in as both a source pixel and a palette
-//! entry. The factory picks the right method per strategy:
+//! entry. The registry picks the right method per strategy:
 //!
 //! * Octahedron / Naive use [`to_point`](DecomposerInputColor::to_point), giving
 //!   a `Point3<f32>` in the decomposer's RGB-cube input space.
@@ -9,7 +9,7 @@
 //!   entry as a sanity check.
 //!
 //! Default impls for `image::Rgb<u8>` and `image::Rgb<f32>` live in
-//! [`crate::image_adapter`] (gated on the `image` feature); other crates
+//! [`crate::image::adapter`] (gated on the `image` feature); other crates
 //! supply their own.
 
 use nalgebra::geometry::Point3;

@@ -1,6 +1,9 @@
 pub mod gray;
+pub mod input;
 pub mod naive;
 pub mod octahedron;
+
+pub use input::DecomposerInputColor;
 
 /// Decomposes a colour-space point into per-palette weights.
 ///

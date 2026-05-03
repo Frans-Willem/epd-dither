@@ -6,17 +6,17 @@
 //! is used both as a source pixel (read out of `T`) and as a palette
 //! entry (in the slice passed in). Image-using callers get default
 //! impls for `image::Rgb<u8>` / `image::Rgb<f32>` (see
-//! [`crate::image_adapter`], gated on the `image` feature); the
-//! [`[u8; 3]`](DecomposerInputColor) impl in [`crate::decomposer_input`] covers the
+//! [`crate::image::adapter`], gated on the `image` feature); the
+//! [`[u8; 3]`](DecomposerInputColor) impl in [`crate::decompose::input`] covers the
 //! image-free case.
 //!
 //! [`NoiseSource::File`] and [`NoiseSource::Blue`] arms are gated on the
-//! `image` feature — they decode an image — but the rest of the factory
+//! `image` feature — they decode an image — but the rest of the registry
 //! works without it, including the all-strings entry
 //! [`parse_decompose_ditherer`].
 
 use crate::Decomposer;
-use crate::decomposer_input::DecomposerInputColor;
+use crate::decompose::DecomposerInputColor;
 use crate::decompose::gray::{OffsetBlendGrayDecomposer, PureSpreadGrayDecomposer};
 use crate::decompose::naive::NaiveDecomposer;
 use crate::decompose::octahedron::OctahedronDecomposer;
@@ -180,7 +180,7 @@ fn sample_luma_image(
 ///
 /// The returned trait object is `Send + Sync` so it can be moved into a
 /// long-lived shared owner (e.g. an `Arc` shared across worker threads).
-/// Every concrete piece the factory composes — built-in decomposers,
+/// Every concrete piece the registry composes — built-in decomposers,
 /// closures with captured constants, [`RefDiffusionMatrix`] — already
 /// satisfies both auto traits.
 pub fn decompose_ditherer<P, Q, T>(

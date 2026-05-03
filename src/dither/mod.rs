@@ -1,12 +1,12 @@
-#[cfg(feature = "alloc")]
-pub mod decomposing;
 pub mod diffuse;
 pub mod diffusion_matrix;
 pub mod ditherer;
+#[cfg(feature = "alloc")]
+pub mod with_decomposer;
 pub mod image_traits;
 
 #[cfg(feature = "alloc")]
-pub use decomposing::{
+pub use with_decomposer::{
     DecomposeStrategy, DecomposedQuantizationError, DecomposingDitherStrategy,
     InvalidDecomposeStrategy,
 };

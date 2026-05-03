@@ -1,5 +1,5 @@
 use crate::decompose::Decomposer;
-use crate::helpers::partial_clamp;
+use super::partial_clamp;
 use core::ops::{Add, AddAssign, Div, Mul, Sub};
 use num_traits::{One, Zero};
 
