@@ -1,7 +1,7 @@
 # Smooth tetrahedron blending for `NaiveDecomposer`
 
 Research note. Background: see `TODO.md` ("Smooth tetrahedron blending in
-NaiveDecomposer") and `documentation/decomposition.md`.
+NaiveDecomposer") and `docs/decomposition.md`.
 
 ## Problem
 

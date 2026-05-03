@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regression harness: dither documentation/lena_original.png over every
+# Regression harness: dither docs/lena_original.png over every
 # (strategy, deterministic-noise) combination and write the outputs to <out_dir>.
 # Re-run on two different revisions and `diff -r` (or sha256sum) the directories
 # to verify a refactor hasn't changed pixel output.
@@ -21,7 +21,7 @@ mkdir -p "$OUT_DIR"
 
 cd "$(dirname "$0")/.."
 
-INPUT="documentation/lena_original.png"
+INPUT="docs/lena_original.png"
 DITHER="target/release/dither"
 
 cargo build --release --bin dither >&2
