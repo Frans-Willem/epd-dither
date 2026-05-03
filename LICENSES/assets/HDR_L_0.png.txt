@@ -1,5 +1,5 @@
-HDR_L_0.png — bundled blue-noise tile
-=====================================
+assets/HDR_L_0.png — bundled blue-noise tile
+============================================
 
 Source: "Free blue noise textures" by Christoph Peters, distributed
 from http://momentsingraphics.de/BlueNoise.html as part of the archive
