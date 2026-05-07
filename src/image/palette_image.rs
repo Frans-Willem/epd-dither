@@ -87,6 +87,11 @@ impl PaletteImage {
         let mut encoder = png::Encoder::new(&mut png_bytes, self.width, self.height);
         encoder.set_color(png::ColorType::Indexed);
         encoder.set_depth(self.palette.bit_depth);
+        // Indexed pixels have no spatial gradient, so the default Adaptive
+        // selector (Sub/Up/Avg/Paeth) routinely picks filters that hurt
+        // compression. NoFilter is the standard recommendation for
+        // palette-indexed PNGs.
+        encoder.set_filter(png::Filter::NoFilter);
         let palette_bytes: Vec<u8> = self.palette.palette.iter().flat_map(|rgb| rgb.0).collect();
         encoder.set_palette(palette_bytes);
         let mut writer = encoder.write_header()?;
